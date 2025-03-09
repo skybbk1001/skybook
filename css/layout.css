@@ -1,0 +1,284 @@
+html {
+  font-size: default-font-size;
+  font-family: default-font-family;
+  box-sizing: border-box;
+  scroll-behavior: smooth;
+}
+body {
+  padding: 0;
+  margin: 0;
+  vertical-align: baseline;
+}
+* {
+  margin: 0px;
+  padding: 0px;
+  list-style: none;
+  text-decoration: none;
+}
+img {
+  max-width: 100%;
+  height: auto;
+  display: inline-block;
+  vertical-align: middle;
+}
+@media (prefers-color-scheme: dark) {
+  img {
+    filter: brightness(0.8);
+  }
+}
+del,
+s {
+  text-decoration: line-through;
+}
+.page {
+  margin-top: 0px;
+}
+.page .head {
+  z-index: 9;
+  top: 0;
+  right: 0;
+  left: 0;
+  border-bottom: 1px solid;
+}
+@media (max-width: 768px) {
+  .page .head {
+    position: fixed;
+    top: 0;
+    animation: showHead 0.4s forwards;
+  }
+  .page .head:not([data-show]) {
+    animation: hideHead 0.4s forwards;
+  }
+  .about,
+  .post-item .post-item-head .post-item-title a,
+  .head-author-link {
+    font-weight: 400 !important;
+  }
+  .menu-nav,
+  .head-right .head-item {
+    display: none;
+  }
+  .post-widget {
+    width: 100%;
+  }
+  #bar-wrap-toggle {
+    display: inline-block;
+  }
+  .page .main {
+    margin-top: 65px;
+  }
+  .menubar-head {
+    display: block;
+    position: fixed;
+    left: 0px;
+    top: 65px;
+    height: calc(100vh - 65px);
+    width: 100%;
+    border-top: 1px solid;
+    box-shadow: 0 5px 10px;
+  }
+  .menubar-head:not([data-show]) {
+    display: none;
+  }
+  #post {
+    width: 100%;
+  }
+@-moz-keyframes showHead {
+    0% {
+      top: -65px;
+    }
+    100% {
+      top: 0;
+    }
+}
+@-webkit-keyframes showHead {
+    0% {
+      top: -65px;
+    }
+    100% {
+      top: 0;
+    }
+}
+@-o-keyframes showHead {
+    0% {
+      top: -65px;
+    }
+    100% {
+      top: 0;
+    }
+}
+@keyframes showHead {
+    0% {
+      top: -65px;
+    }
+    100% {
+      top: 0;
+    }
+}
+@-moz-keyframes hideHead {
+    0% {
+      top: 0;
+    }
+    100% {
+      top: -65px;
+    }
+}
+@-webkit-keyframes hideHead {
+    0% {
+      top: 0;
+    }
+    100% {
+      top: -65px;
+    }
+}
+@-o-keyframes hideHead {
+    0% {
+      top: 0;
+    }
+    100% {
+      top: -65px;
+    }
+}
+@keyframes hideHead {
+    0% {
+      top: 0;
+    }
+    100% {
+      top: -65px;
+    }
+}
+}
+.main {
+  margin-left: auto;
+  margin-right: auto;
+  width: 90%;
+  max-width: content-max-width;
+  display: grid;
+  grid-template-columns: minmax(75%, 800px) auto;
+  grid-column-gap: 20px;
+}
+.main[data-page="post"] {
+  padding: 40px 0;
+}
+.main[data-page="home"] {
+  padding: unset;
+}
+.main[data-page="tag"] {
+  display: block;
+}
+.main[data-page="category"],
+.main[data-page="archive"] {
+  display: block;
+}
+.main .post .article-entry p {
+  line-height: 1.5em;
+}
+.article-tag-list-item {
+  display: inline;
+  margin-right: 0.5rem;
+}
+.article-tag-list-item:last-of-type {
+  margin-right: auto;
+}
+.article-entry li {
+  font-size: 20px;
+  line-height: 2rem;
+}
+.article-entry ul {
+  margin-left: 2em;
+  padding-left: 2em;
+  padding-bottom: 0.75em;
+}
+.article-entry ul li {
+  list-style: disc;
+}
+.article-entry ul li p {
+  text-indent: 0;
+}
+.article-entry ul ul li {
+  list-style: circle;
+}
+.article-entry ol {
+  padding-left: 2em;
+  padding-bottom: 0.75em;
+}
+.article-entry ol li {
+  list-style: decimal;
+}
+.article-entry ol li p {
+  text-indent: 0;
+}
+.page .footer-nav {
+  display: block;
+  margin: 30px auto 0px;
+  width: 100%;
+}
+.page .footer-nav .footer {
+  margin: 0 auto;
+  padding: 20px 0;
+  border-top: 1px solid;
+  max-width: content-max-width;
+  width: 90%;
+  overflow: hidden;
+}
+.page .footer-nav .footer .footer-links {
+  padding-top: 2em;
+  padding-bottom: 1em;
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.page .footer-nav .footer .footer-links .footer-links-column {
+  width: 25%;
+}
+@media (max-width: 768px) {
+  .page .footer-nav .footer .footer-links .footer-links-column {
+    width: 50%;
+  }
+}
+.page .footer-nav .footer .footer-links .footer-links-column p {
+  padding-right: 1em;
+  padding-bottom: 1em;
+}
+.page .footer-nav .footer .icp {
+  margin-bottom: 10px;
+}
+.page .footer-nav .footer .icp .icp-text {
+  vertical-align: middle;
+}
+.page .back-top {
+  margin-right: 40px;
+  cursor: pointer;
+}
+.page .back-top .icon {
+  float: right;
+  font-size: 20px;
+  font-weight: 600;
+}
+.nav-icon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+}
+.post-meta {
+  font-family: default-font-family;
+  margin-bottom: 10px;
+}
+.post-meta .post-date {
+  display: inline-block;
+  margin-right: 10px;
+}
+.post-meta .post-date .post-time {
+  font-family: 'Raleway', Georgia, 'Times New Roman', Times, serif;
+}
+.post-meta .post-tag {
+  display: inline-block;
+  margin: 0 10px;
+}
+.post-meta .post-tag a {
+  text-decoration: none;
+}
+.post-meta .post-visit {
+  display: inline-block;
+  margin: 0 10px;
+}
