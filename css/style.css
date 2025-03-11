@@ -960,6 +960,8 @@ figure.highlight > .clipboard-btn .icon:before {
 }
 .head-right .head-item {
   display: inline-block;
+  display: flex;
+  gap: 30px;
   margin-left: 30px;
 }
 .head-right .head-item .head-item-link {
