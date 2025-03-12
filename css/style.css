@@ -1665,6 +1665,13 @@ figure.highlight.cpp figcaption span:before {
 #gitalk-comments .vcount {
   font-size: 14px !important;
 }
+#giscus-comments .vcontent p {
+  font-family: initial;
+  font-size: initial;
+}
+#giscus-comments .vcount {
+  font-size: 14px !important;
+}
 .post-widget {
   font-size: 14px;
   max-width: 200px;
