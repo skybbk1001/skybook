@@ -50,7 +50,7 @@ document.addEventListener('DOMContentLoaded', async function () {
           type: 'publish',
           date: new Date(date),
           title,
-          permalink,
+          permalink: permalink.replace(/^https:\/\/[^/]+/,""),
           author
         });
       }
@@ -60,7 +60,7 @@ document.addEventListener('DOMContentLoaded', async function () {
           type: 'update',
           date: new Date(updated),
           title,
-          permalink,
+          permalink: permalink.replace(/^https:\/\/[^/]+/,""),
           author
         });
       }
