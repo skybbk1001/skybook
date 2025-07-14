@@ -14,14 +14,7 @@ interface UserConfig {
   lastExecuted?: string;
   lastResult?: string;
   createdAt: string;
-  userToken: string;
   executionOffset?: number;
-}
-
-interface UserAuth {
-  userId: string;
-  userToken: string;
-  createdAt: string;
 }
 
 export default {
@@ -48,7 +41,7 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type',
   };
 
   if (request.method === 'OPTIONS') {
@@ -56,37 +49,11 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
   }
 
   try {
-    if (url.pathname === '/api/hangup/auth' && request.method === 'POST') {
-      const body = await request.json() as { userId: string };
-      const userToken = await generateUserToken(body.userId);
-      const userAuth: UserAuth = {
-        userId: body.userId,
-        userToken,
-        createdAt: new Date().toISOString()
-      };
-      
-      await env.KV_BINDING.put(`auth:${body.userId}`, JSON.stringify(userAuth));
-      
-      return new Response(JSON.stringify({ 
-        success: true, 
-        userId: body.userId, 
-        userToken 
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
+    // 保存新配置
     if (url.pathname === '/api/hangup/configs' && request.method === 'POST') {
       const body = await request.json() as UserConfig;
       
-      if (!await validateUserToken(body.userId, body.userToken, env)) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), { 
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-
-      const configId = await generateConfigId();
+      const configId = generateConfigId();
       const executionOffset = Math.floor(Math.random() * 300); // 0-300秒随机偏移
       
       const config: UserConfig = {
@@ -108,13 +75,13 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
       });
     }
 
+    // 获取用户配置列表
     if (url.pathname === '/api/hangup/configs' && request.method === 'GET') {
       const userId = url.searchParams.get('userId');
-      const userToken = url.searchParams.get('userToken');
       
-      if (!userId || !userToken || !await validateUserToken(userId, userToken, env)) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), { 
-          status: 401,
+      if (!userId) {
+        return new Response(JSON.stringify({ error: '缺少用户ID' }), { 
+          status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
@@ -125,19 +92,38 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
       });
     }
 
+    // 删除配置
     if (url.pathname.startsWith('/api/hangup/configs/') && request.method === 'DELETE') {
       const configId = url.pathname.split('/').pop();
-      const body = await request.json() as { userId: string; userToken: string };
+      const body = await request.json() as { userId: string };
       
-      if (!await validateUserToken(body.userId, body.userToken, env)) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), { 
-          status: 401,
+      await env.KV_BINDING.delete(`stv_config:${body.userId}:${configId}`);
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // 切换配置状态
+    if (url.pathname.startsWith('/api/hangup/configs/') && url.pathname.endsWith('/toggle') && request.method === 'POST') {
+      const pathParts = url.pathname.split('/');
+      const configId = pathParts[pathParts.length - 2];
+      const body = await request.json() as { userId: string };
+      
+      const configKey = `stv_config:${body.userId}:${configId}`;
+      const configData = await env.KV_BINDING.get(configKey);
+      
+      if (configData) {
+        const config: UserConfig = JSON.parse(configData);
+        config.isActive = !config.isActive;
+        await env.KV_BINDING.put(configKey, JSON.stringify(config));
+        
+        return new Response(JSON.stringify({ success: true, isActive: config.isActive }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
-
-      await env.KV_BINDING.delete(`stv_config:${body.userId}:${configId}`);
-      return new Response(JSON.stringify({ success: true }), {
+      
+      return new Response(JSON.stringify({ error: '配置不存在' }), { 
+        status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -173,30 +159,35 @@ async function serveHangupPage(env: Env): Promise<Response> {
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
         input, textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
-        button { background: #007cba; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
+        button { background: #007cba; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; }
         button:hover { background: #005a8b; }
+        button.danger { background: #dc3545; }
+        button.danger:hover { background: #c82333; }
+        button.success { background: #28a745; }
+        button.success:hover { background: #218838; }
         .config-item { background: white; padding: 15px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid #007cba; }
         .status { padding: 5px 10px; border-radius: 3px; font-size: 12px; }
         .status.active { background: #d4edda; color: #155724; }
         .status.inactive { background: #f8d7da; color: #721c24; }
         .error { color: #d32f2f; margin-top: 10px; }
         .success { color: #388e3c; margin-top: 10px; }
+        .hidden { display: none; }
     </style>
 </head>
 <body>
     <h1>STV 自动挂机管理</h1>
     
     <div class="container">
-        <h2>用户验证</h2>
+        <h2>用户设置</h2>
         <div class="form-group">
             <label for="userId">用户ID:</label>
             <input type="text" id="userId" placeholder="请输入你的 STV 用户ID">
         </div>
-        <button onclick="authenticateUser()">验证用户</button>
-        <div id="authMessage"></div>
+        <button onclick="setUser()">设置用户</button>
+        <div id="userMessage"></div>
     </div>
 
-    <div id="configSection" style="display: none;">
+    <div id="configSection" class="hidden">
         <div class="container">
             <h2>添加新配置</h2>
             <form id="configForm">
@@ -225,92 +216,73 @@ async function serveHangupPage(env: Env): Promise<Response> {
     </div>
 
     <script>
-        let currentUser = null;
+        let currentUserId = null;
 
-        async function authenticateUser() {
+        function setUser() {
             const userId = document.getElementById('userId').value.trim();
             if (!userId) {
-                showMessage('authMessage', '请输入用户ID', 'error');
+                showMessage('userMessage', '请输入用户ID', 'error');
                 return;
             }
 
-            try {
-                const response = await fetch('/api/hangup/auth', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    currentUser = { userId: result.userId, userToken: result.userToken };
-                    document.getElementById('configSection').style.display = 'block';
-                    showMessage('authMessage', '验证成功！', 'success');
-                    loadConfigs();
-                } else {
-                    showMessage('authMessage', '验证失败', 'error');
-                }
-            } catch (error) {
-                console.error('Auth error:', error);
-                showMessage('authMessage', '验证过程中发生错误', 'error');
-            }
+            currentUserId = userId;
+            document.getElementById('configSection').classList.remove('hidden');
+            document.getElementById('stvUID').value = userId; // 自动填充
+            showMessage('userMessage', '用户设置成功！', 'success');
+            loadConfigs();
         }
 
-        // 修复表单提交事件处理
         document.addEventListener('DOMContentLoaded', function() {
             const configForm = document.getElementById('configForm');
-            if (configForm) {
-                configForm.addEventListener('submit', async function(event) {
-                    event.preventDefault(); // 防止默认表单提交
+            configForm.addEventListener('submit', async function(event) {
+                event.preventDefault();
+                
+                if (!currentUserId) {
+                    showMessage('configMessage', '请先设置用户ID', 'error');
+                    return;
+                }
+
+                const formData = {
+                    userId: currentUserId,
+                    configName: document.getElementById('configName').value.trim(),
+                    stvUID: document.getElementById('stvUID').value.trim(),
+                    cookie: document.getElementById('cookie').value.trim()
+                };
+
+                if (!formData.configName || !formData.stvUID || !formData.cookie) {
+                    showMessage('configMessage', '请填写所有字段', 'error');
+                    return;
+                }
+
+                try {
+                    const response = await fetch('/api/hangup/configs', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(formData)
+                    });
                     
-                    if (!currentUser) {
-                        showMessage('configMessage', '请先验证用户', 'error');
-                        return;
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        showMessage('configMessage', '配置保存成功！', 'success');
+                        configForm.reset();
+                        document.getElementById('stvUID').value = currentUserId; // 重新填充
+                        loadConfigs();
+                    } else {
+                        showMessage('configMessage', '保存失败: ' + (result.error || '未知错误'), 'error');
                     }
-
-                    const formData = {
-                        userId: currentUser.userId,
-                        userToken: currentUser.userToken,
-                        configName: document.getElementById('configName').value.trim(),
-                        stvUID: document.getElementById('stvUID').value.trim(),
-                        cookie: document.getElementById('cookie').value.trim()
-                    };
-
-                    if (!formData.configName || !formData.stvUID || !formData.cookie) {
-                        showMessage('configMessage', '请填写所有字段', 'error');
-                        return;
-                    }
-
-                    try {
-                        const response = await fetch('/api/hangup/configs', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(formData)
-                        });
-                        
-                        const result = await response.json();
-                        
-                        if (result.success) {
-                            showMessage('configMessage', '配置保存成功！', 'success');
-                            configForm.reset(); // 重置表单
-                            loadConfigs(); // 刷新配置列表
-                        } else {
-                            showMessage('configMessage', '保存失败: ' + (result.error || '未知错误'), 'error');
-                        }
-                    } catch (error) {
-                        console.error('Save error:', error);
-                        showMessage('configMessage', '保存过程中发生错误', 'error');
-                    }
-                });
-            }
+                } catch (error) {
+                    console.error('Save error:', error);
+                    showMessage('configMessage', '保存过程中发生错误', 'error');
+                }
+            });
         });
 
         async function loadConfigs() {
-            if (!currentUser) return;
+            if (!currentUserId) return;
 
             try {
-                const response = await fetch(\`/api/hangup/configs?userId=\${currentUser.userId}&userToken=\${currentUser.userToken}\`);
+                const response = await fetch(\`/api/hangup/configs?userId=\${currentUserId}\`);
                 const result = await response.json();
                 
                 if (result.configs) {
@@ -335,9 +307,30 @@ async function serveHangupPage(env: Env): Promise<Response> {
                     <p><strong>状态:</strong> <span class="status \${config.isActive ? 'active' : 'inactive'}">\${config.isActive ? '运行中' : '已停止'}</span></p>
                     <p><strong>上次执行:</strong> \${config.lastExecuted || '未执行'}</p>
                     <p><strong>执行结果:</strong> \${config.lastResult || '无'}</p>
-                    <button onclick="deleteConfig('\${config.configId}')" style="background: #dc3545;">删除配置</button>
+                    <p><strong>创建时间:</strong> \${new Date(config.createdAt).toLocaleString()}</p>
+                    <button class="\${config.isActive ? 'danger' : 'success'}" onclick="toggleConfig('\${config.configId}')">
+                        \${config.isActive ? '停止' : '启动'}
+                    </button>
+                    <button class="danger" onclick="deleteConfig('\${config.configId}')">删除配置</button>
                 </div>
             \`).join('');
+        }
+
+        async function toggleConfig(configId) {
+            try {
+                const response = await fetch(\`/api/hangup/configs/\${configId}/toggle\`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: currentUserId })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    loadConfigs();
+                }
+            } catch (error) {
+                console.error('Toggle error:', error);
+            }
         }
 
         async function deleteConfig(configId) {
@@ -347,7 +340,7 @@ async function serveHangupPage(env: Env): Promise<Response> {
                 const response = await fetch(\`/api/hangup/configs/\${configId}\`, {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: currentUser.userId, userToken: currentUser.userToken })
+                    body: JSON.stringify({ userId: currentUserId })
                 });
                 
                 const result = await response.json();
@@ -395,7 +388,7 @@ async function executeHangupTasks(env: Env, ctx: ExecutionContext) {
           ctx.waitUntil(executeHangupRequest(config, env));
         }
       } catch (error) {
-        console.error(\`Error processing config \${key.name}:\`, error);
+        console.error(`Error processing config ${key.name}:`, error);
       }
     }
   } catch (error) {
@@ -405,7 +398,7 @@ async function executeHangupTasks(env: Env, ctx: ExecutionContext) {
 
 async function executeHangupRequest(config: UserConfig, env: Env) {
   try {
-    const response = await fetch(\`https://sangtacviet.app/io/user/online?ngmar=ol2&u=\${config.stvUID}\`, {
+    const response = await fetch(`https://sangtacviet.app/io/user/online?ngmar=ol2&u=${config.stvUID}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -419,65 +412,38 @@ async function executeHangupRequest(config: UserConfig, env: Env) {
     const success = response.ok && result.includes('success');
     
     config.lastExecuted = new Date().toISOString();
-    config.lastResult = success ? '成功' : \`失败: \${result.substring(0, 100)}\`;
+    config.lastResult = success ? '成功' : `失败: ${result.substring(0, 100)}`;
     
-    await env.KV_BINDING.put(\`stv_config:\${config.userId}:\${config.configId}\`, JSON.stringify(config));
+    await env.KV_BINDING.put(`stv_config:${config.userId}:${config.configId}`, JSON.stringify(config));
     
   } catch (error) {
     config.lastExecuted = new Date().toISOString();
-    config.lastResult = \`错误: \${error instanceof Error ? error.message : 'Unknown error'}\`;
-    await env.KV_BINDING.put(\`stv_config:\${config.userId}:\${config.configId}\`, JSON.stringify(config));
-  }
-}
-
-async function validateUserToken(userId: string, userToken: string, env: Env): Promise<boolean> {
-  try {
-    const authData = await env.KV_BINDING.get(\`auth:\${userId}\`);
-    if (!authData) return false;
-    
-    const auth: UserAuth = JSON.parse(authData);
-    return auth.userToken === userToken;
-  } catch {
-    return false;
+    config.lastResult = `错误: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    await env.KV_BINDING.put(`stv_config:${config.userId}:${config.configId}`, JSON.stringify(config));
   }
 }
 
 async function getUserConfigs(userId: string, env: Env): Promise<UserConfig[]> {
   const configs: UserConfig[] = [];
-  const allKeys = await env.KV_BINDING.list({ prefix: \`stv_config:\${userId}:\` });
+  const allKeys = await env.KV_BINDING.list({ prefix: `stv_config:${userId}:` });
   
   for (const key of allKeys.keys) {
     try {
       const configData = await env.KV_BINDING.get(key.name);
       if (configData) {
         const config: UserConfig = JSON.parse(configData);
-        // 不返回敏感信息
+        // 不返回敏感的 cookie 信息到前端
         delete (config as any).cookie;
-        delete (config as any).userToken;
         configs.push(config);
       }
     } catch (error) {
-      console.error(\`Error loading config \${key.name}:\`, error);
+      console.error(`Error loading config ${key.name}:`, error);
     }
   }
   
   return configs;
 }
 
-async function generateUserToken(userId: string): Promise<string> {
-  const timestamp = Date.now().toString();
-  const randomStr = Math.random().toString(36).substring(2, 15);
-  const tokenData = \`\${userId}_\${timestamp}_\${randomStr}\`;
-  
-  const encoder = new TextEncoder();
-  const data = encoder.encode(tokenData);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  
-  return btoa(tokenData + '_' + hashHex.substring(0, 10));
-}
-
-async function generateConfigId(): Promise<string> {
+function generateConfigId(): string {
   return 'cfg_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 15);
 }
