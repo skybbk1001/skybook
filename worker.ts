@@ -14,8 +14,6 @@ interface UserConfig {
   lastExecuted?: string;
   lastResult?: string;
   createdAt: string;
-  executionOffset?: number;
-  nextExecutionTime?: string;
   executionCount?: number;
 }
 
@@ -35,15 +33,9 @@ export default {
   },
 
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    const cronLog = {
-      timestamp: new Date().toISOString(),
-      scheduledTime: controller.scheduledTime,
-      cron: controller.cron
-    };
-    
-    console.log('=== Cron Triggered ===', cronLog);
-    await env.KV_BINDING.put('last_cron_execution', JSON.stringify(cronLog));
-    await executeHangupTasks(env, ctx);
+    console.log('=== Cron 定时执行开始 ===', new Date().toISOString());
+    await executeAllHangupTasks(env, ctx);
+    console.log('=== Cron 定时执行结束 ===');
   }
 };
 
@@ -59,41 +51,26 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
   }
 
   try {
-    if (url.pathname === '/api/hangup/status' && request.method === 'GET') {
-      const lastCronExecution = await env.KV_BINDING.get('last_cron_execution');
-      const currentTime = new Date().toISOString();
-      
-      return new Response(JSON.stringify({
-        currentTime,
-        lastCronExecution: lastCronExecution ? JSON.parse(lastCronExecution) : null,
-        cronConfigured: true
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
+    // 手动触发执行
     if (url.pathname === '/api/hangup/execute' && request.method === 'POST') {
-      console.log('=== Manual Execution Triggered ===');
-      await executeHangupTasks(env, {} as ExecutionContext);
+      console.log('=== 手动执行开始 ===');
+      await executeAllHangupTasks(env, {} as ExecutionContext);
       return new Response(JSON.stringify({ success: true, message: '手动执行完成' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
+    // 保存新配置
     if (url.pathname === '/api/hangup/configs' && request.method === 'POST') {
       const body = await request.json() as UserConfig;
       
       const configId = generateConfigId();
-      const executionOffset = Math.floor(Math.random() * 300);
-      const nextExecution = calculateNextExecution(executionOffset);
       
       const config: UserConfig = {
         ...body,
         configId,
-        executionOffset,
         isActive: true,
         createdAt: new Date().toISOString(),
-        nextExecutionTime: nextExecution,
         executionCount: 0
       };
 
@@ -102,14 +79,13 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
       return new Response(JSON.stringify({ 
         success: true, 
         configId,
-        message: '配置保存成功',
-        executionOffset: executionOffset,
-        nextExecutionTime: nextExecution
+        message: '配置保存成功'
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
+    // 获取用户配置列表
     if (url.pathname === '/api/hangup/configs' && request.method === 'GET') {
       const userId = url.searchParams.get('userId');
       
@@ -126,6 +102,7 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
       });
     }
 
+    // 删除配置
     if (url.pathname.startsWith('/api/hangup/configs/') && request.method === 'DELETE') {
       const configId = url.pathname.split('/').pop();
       const body = await request.json() as { userId: string };
@@ -136,6 +113,7 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
       });
     }
 
+    // 切换配置状态
     if (url.pathname.startsWith('/api/hangup/configs/') && url.pathname.endsWith('/toggle') && request.method === 'POST') {
       const pathParts = url.pathname.split('/');
       const configId = pathParts[pathParts.length - 2];
@@ -147,12 +125,6 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
       if (configData) {
         const config: UserConfig = JSON.parse(configData);
         config.isActive = !config.isActive;
-        
-        if (config.isActive) {
-          config.nextExecutionTime = calculateNextExecution(config.executionOffset || 0);
-        } else {
-          config.nextExecutionTime = undefined;
-        }
         
         await env.KV_BINDING.put(configKey, JSON.stringify(config));
         
@@ -193,7 +165,7 @@ async function serveHangupPage(env: Env): Promise<Response> {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>STV 自动挂机管理</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; }
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
         .container { background: #f5f5f5; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
@@ -206,8 +178,6 @@ async function serveHangupPage(env: Env): Promise<Response> {
         button.success:hover { background: #218838; }
         button.warning { background: #ffc107; color: #212529; }
         button.warning:hover { background: #e0a800; }
-        button.info { background: #17a2b8; }
-        button.info:hover { background: #138496; }
         .config-item { background: white; padding: 15px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid #007cba; }
         .status { padding: 5px 10px; border-radius: 3px; font-size: 12px; }
         .status.active { background: #d4edda; color: #155724; }
@@ -215,17 +185,14 @@ async function serveHangupPage(env: Env): Promise<Response> {
         .error { color: #d32f2f; margin-top: 10px; }
         .success { color: #388e3c; margin-top: 10px; }
         .hidden { display: none; }
-        .debug-info { background: #e3f2fd; padding: 10px; border-radius: 4px; font-size: 12px; margin-top: 10px; }
-        .system-status { background: #fff3cd; padding: 15px; border-radius: 5px; margin-bottom: 20px; border-left: 4px solid #ffc107; }
+        .note { background: #e3f2fd; padding: 15px; border-radius: 5px; margin-bottom: 20px; border-left: 4px solid #2196f3; }
     </style>
 </head>
 <body>
     <h1>STV 自动挂机管理</h1>
     
-    <div class="system-status">
-        <h3>系统状态</h3>
-        <div id="systemStatus">加载中...</div>
-        <button class="info" onclick="loadSystemStatus()">刷新状态</button>
+    <div class="note">
+        <p><strong>说明：</strong>系统每5分钟自动执行一次所有启用的配置，无需手动干预。</p>
     </div>
     
     <div class="container">
@@ -271,8 +238,6 @@ async function serveHangupPage(env: Env): Promise<Response> {
         let currentUserId = null;
 
         document.addEventListener('DOMContentLoaded', function() {
-            loadSystemStatus();
-            
             const configForm = document.getElementById('configForm');
             configForm.addEventListener('submit', async function(event) {
                 event.preventDefault();
@@ -304,7 +269,7 @@ async function serveHangupPage(env: Env): Promise<Response> {
                     const result = await response.json();
                     
                     if (result.success) {
-                        showMessage('configMessage', \`配置保存成功！预计下次执行: \${new Date(result.nextExecutionTime).toLocaleString()}\`, 'success');
+                        showMessage('configMessage', '配置保存成功！', 'success');
                         configForm.reset();
                         loadConfigs();
                     } else {
@@ -316,27 +281,6 @@ async function serveHangupPage(env: Env): Promise<Response> {
                 }
             });
         });
-
-        async function loadSystemStatus() {
-            try {
-                const response = await fetch('/api/hangup/status');
-                const status = await response.json();
-                
-                const statusHtml = \`
-                    <p><strong>当前时间:</strong> \${new Date(status.currentTime).toLocaleString()}</p>
-                    <p><strong>Cron 配置:</strong> \${status.cronConfigured ? '✅ 已配置' : '❌ 未配置'}</p>
-                    <p><strong>最后执行:</strong> \${status.lastCronExecution ? 
-                        new Date(status.lastCronExecution.timestamp).toLocaleString() + 
-                        ' (计划时间: ' + new Date(status.lastCronExecution.scheduledTime).toLocaleString() + ')' 
-                        : '❌ 从未执行'}</p>
-                \`;
-                
-                document.getElementById('systemStatus').innerHTML = statusHtml;
-            } catch (error) {
-                document.getElementById('systemStatus').innerHTML = '❌ 获取状态失败';
-                console.error('Load status error:', error);
-            }
-        }
 
         function setUser() {
             const userId = document.getElementById('userId').value.trim();
@@ -362,7 +306,6 @@ async function serveHangupPage(env: Env): Promise<Response> {
                 if (result.success) {
                     alert('手动执行完成，请刷新配置列表查看结果');
                     loadConfigs();
-                    loadSystemStatus();
                 }
             } catch (error) {
                 console.error('Manual execute error:', error);
@@ -400,11 +343,7 @@ async function serveHangupPage(env: Env): Promise<Response> {
                     <p><strong>执行次数:</strong> \${config.executionCount || 0} 次</p>
                     <p><strong>上次执行:</strong> \${config.lastExecuted ? new Date(config.lastExecuted).toLocaleString() : '未执行'}</p>
                     <p><strong>执行结果:</strong> \${config.lastResult || '无'}</p>
-                    <p><strong>预计下次执行:</strong> \${config.nextExecutionTime ? new Date(config.nextExecutionTime).toLocaleString() : '已停止'}</p>
                     <p><strong>创建时间:</strong> \${new Date(config.createdAt).toLocaleString()}</p>
-                    <div class="debug-info">
-                        <strong>调试信息:</strong> 执行偏移 \${config.executionOffset || 0} 秒 (约 \${Math.floor((config.executionOffset || 0) / 60)}:\${String((config.executionOffset || 0) % 60).padStart(2, '0')})
-                    </div>
                     <button class="\${config.isActive ? 'danger' : 'success'}" onclick="toggleConfig('\${config.configId}')">
                         \${config.isActive ? '停止' : '启动'}
                     </button>
@@ -463,19 +402,9 @@ async function serveHangupPage(env: Env): Promise<Response> {
   });
 }
 
-async function executeHangupTasks(env: Env, ctx: ExecutionContext) {
+async function executeAllHangupTasks(env: Env, ctx: ExecutionContext) {
   try {
-    console.log('=== 开始执行挂机任务 ===');
-    const currentTime = new Date();
-    
-    // 修复：正确计算当前在5分钟周期内的位置
-    const currentMinute = currentTime.getMinutes();
-    const currentSecond = currentTime.getSeconds();
-    const currentCyclePosition = (currentMinute % 5) * 60 + currentSecond;
-    
-    console.log(`当前时间: ${currentTime.toISOString()}`);
-    console.log(`当前分钟: ${currentMinute}, 当前秒: ${currentSecond}`);
-    console.log(`当前周期位置: ${currentCyclePosition} 秒 (${Math.floor(currentCyclePosition/60)}:${String(currentCyclePosition%60).padStart(2, '0')})`);
+    console.log('=== 开始执行所有挂机任务 ===');
     
     const allKeys = await env.KV_BINDING.list({ prefix: 'stv_config:' });
     console.log(`找到 ${allKeys.keys.length} 个配置`);
@@ -493,31 +422,18 @@ async function executeHangupTasks(env: Env, ctx: ExecutionContext) {
           continue;
         }
         
-        const offset = config.executionOffset || 0;
-        const targetPosition = offset % 300;
-        const timeDiff = Math.abs(currentCyclePosition - targetPosition);
+        console.log(`✅ 执行配置 ${config.configName}`);
+        await executeHangupRequest(config, env);
+        executedCount++;
         
-        console.log(`配置 ${config.configName}:`);
-        console.log(`  - 执行偏移: ${offset} 秒`);
-        console.log(`  - 目标位置: ${targetPosition} 秒 (${Math.floor(targetPosition/60)}:${String(targetPosition%60).padStart(2, '0')})`);
-        console.log(`  - 时间差: ${timeDiff} 秒`);
-        
-        // 使用90秒的执行窗口，确保不会错过
-        if (timeDiff <= 90) {
-          console.log(`✅ 执行配置 ${config.configName}`);
-          await executeHangupRequest(config, env);
-          executedCount++;
-        } else {
-          console.log(`⏭️ 跳过配置 ${config.configName}，时间窗口不匹配 (差距: ${timeDiff} 秒)`);
-        }
       } catch (error) {
         console.error(`❌ 处理配置 ${key.name} 时出错:`, error);
       }
     }
     
-    console.log(`=== 本次执行完成，共执行了 ${executedCount} 个配置 ===`);
+    console.log(`=== 执行完成，共执行了 ${executedCount} 个配置 ===`);
   } catch (error) {
-    console.error('❌ executeHangupTasks 错误:', error);
+    console.error('❌ executeAllHangupTasks 错误:', error);
   }
 }
 
@@ -544,10 +460,8 @@ async function executeHangupRequest(config: UserConfig, env: Env) {
     config.lastExecuted = new Date().toISOString();
     config.lastResult = success ? '✅ 成功' : `❌ 失败: ${result.substring(0, 100)}`;
     config.executionCount = (config.executionCount || 0) + 1;
-    config.nextExecutionTime = calculateNextExecution(config.executionOffset || 0);
     
     console.log(`📊 挂机请求结果: ${config.configName} - ${config.lastResult}`);
-    console.log(`📋 响应内容: ${result.substring(0, 200)}`);
     
     await env.KV_BINDING.put(`stv_config:${config.userId}:${config.configId}`, JSON.stringify(config));
     
@@ -556,36 +470,11 @@ async function executeHangupRequest(config: UserConfig, env: Env) {
     config.lastExecuted = new Date().toISOString();
     config.lastResult = `❌ 错误: ${errorMsg}`;
     config.executionCount = (config.executionCount || 0) + 1;
-    config.nextExecutionTime = calculateNextExecution(config.executionOffset || 0);
     
     console.error(`💥 挂机请求错误: ${config.configName} - ${errorMsg}`);
     
     await env.KV_BINDING.put(`stv_config:${config.userId}:${config.configId}`, JSON.stringify(config));
   }
-}
-
-function calculateNextExecution(offset: number): string {
-  const now = new Date();
-  const currentMinute = now.getMinutes();
-  const currentSecond = now.getSeconds();
-  const currentCyclePosition = (currentMinute % 5) * 60 + currentSecond;
-  
-  const targetPosition = offset % 300;
-  
-  let nextExecution = new Date(now);
-  
-  if (currentCyclePosition < targetPosition) {
-    // 本5分钟周期内还没到执行时间
-    const secondsToAdd = targetPosition - currentCyclePosition;
-    nextExecution.setTime(nextExecution.getTime() + secondsToAdd * 1000);
-  } else {
-    // 本5分钟周期已过，计算下个周期
-    const secondsToNextCycle = 300 - currentCyclePosition;
-    const secondsToAdd = secondsToNextCycle + targetPosition;
-    nextExecution.setTime(nextExecution.getTime() + secondsToAdd * 1000);
-  }
-  
-  return nextExecution.toISOString();
 }
 
 async function getUserConfigs(userId: string, env: Env): Promise<UserConfig[]> {
