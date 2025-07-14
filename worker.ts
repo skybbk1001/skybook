@@ -523,7 +523,7 @@ async function serveHangupPage(env: Env): Promise<Response> {
 
             currentUserId = userId;
             document.getElementById('configSection').classList.remove('hidden');
-            showMessage('userMessage', '用户设置成功！', 'success');
+            showMessage('userMessage', '登录成功！', 'success');
             loadConfigs();
         }
 
