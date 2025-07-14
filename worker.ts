@@ -15,8 +15,8 @@ interface UserConfig {
   lastResult?: string;
   createdAt: string;
   executionOffset?: number;
-  nextExecutionTime?: string; // 预计下次执行时间
-  executionCount?: number; // 执行次数
+  nextExecutionTime?: string;
+  executionCount?: number;
 }
 
 export default {
@@ -35,7 +35,6 @@ export default {
   },
 
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    // 记录 Cron 执行日志
     const cronLog = {
       timestamp: new Date().toISOString(),
       scheduledTime: controller.scheduledTime,
@@ -43,10 +42,7 @@ export default {
     };
     
     console.log('=== Cron Triggered ===', cronLog);
-    
-    // 将 Cron 执行记录保存到 KV
     await env.KV_BINDING.put('last_cron_execution', JSON.stringify(cronLog));
-    
     await executeHangupTasks(env, ctx);
   }
 };
@@ -63,7 +59,6 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
   }
 
   try {
-    // 获取 Cron 状态
     if (url.pathname === '/api/hangup/status' && request.method === 'GET') {
       const lastCronExecution = await env.KV_BINDING.get('last_cron_execution');
       const currentTime = new Date().toISOString();
@@ -71,13 +66,12 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
       return new Response(JSON.stringify({
         currentTime,
         lastCronExecution: lastCronExecution ? JSON.parse(lastCronExecution) : null,
-        cronConfigured: true // 假设已配置
+        cronConfigured: true
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // 手动触发执行（用于调试）
     if (url.pathname === '/api/hangup/execute' && request.method === 'POST') {
       console.log('=== Manual Execution Triggered ===');
       await executeHangupTasks(env, {} as ExecutionContext);
@@ -86,14 +80,11 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
       });
     }
 
-    // 保存新配置
     if (url.pathname === '/api/hangup/configs' && request.method === 'POST') {
       const body = await request.json() as UserConfig;
       
       const configId = generateConfigId();
       const executionOffset = Math.floor(Math.random() * 300);
-      
-      // 计算下次执行时间
       const nextExecution = calculateNextExecution(executionOffset);
       
       const config: UserConfig = {
@@ -119,7 +110,6 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
       });
     }
 
-    // 获取用户配置列表
     if (url.pathname === '/api/hangup/configs' && request.method === 'GET') {
       const userId = url.searchParams.get('userId');
       
@@ -136,7 +126,6 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
       });
     }
 
-    // 删除配置
     if (url.pathname.startsWith('/api/hangup/configs/') && request.method === 'DELETE') {
       const configId = url.pathname.split('/').pop();
       const body = await request.json() as { userId: string };
@@ -147,7 +136,6 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
       });
     }
 
-    // 切换配置状态
     if (url.pathname.startsWith('/api/hangup/configs/') && url.pathname.endsWith('/toggle') && request.method === 'POST') {
       const pathParts = url.pathname.split('/');
       const configId = pathParts[pathParts.length - 2];
@@ -160,7 +148,6 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
         const config: UserConfig = JSON.parse(configData);
         config.isActive = !config.isActive;
         
-        // 重新计算下次执行时间
         if (config.isActive) {
           config.nextExecutionTime = calculateNextExecution(config.executionOffset || 0);
         } else {
@@ -283,7 +270,6 @@ async function serveHangupPage(env: Env): Promise<Response> {
     <script>
         let currentUserId = null;
 
-        // 页面加载时自动检查系统状态
         document.addEventListener('DOMContentLoaded', function() {
             loadSystemStatus();
             
@@ -318,7 +304,7 @@ async function serveHangupPage(env: Env): Promise<Response> {
                     const result = await response.json();
                     
                     if (result.success) {
-                        showMessage('configMessage', \`配置保存成功！预计下次执行: \${result.nextExecutionTime}\`, 'success');
+                        showMessage('configMessage', \`配置保存成功！预计下次执行: \${new Date(result.nextExecutionTime).toLocaleString()}\`, 'success');
                         configForm.reset();
                         loadConfigs();
                     } else {
@@ -417,7 +403,7 @@ async function serveHangupPage(env: Env): Promise<Response> {
                     <p><strong>预计下次执行:</strong> \${config.nextExecutionTime ? new Date(config.nextExecutionTime).toLocaleString() : '已停止'}</p>
                     <p><strong>创建时间:</strong> \${new Date(config.createdAt).toLocaleString()}</p>
                     <div class="debug-info">
-                        <strong>调试信息:</strong> 执行偏移 \${config.executionOffset || 0} 秒
+                        <strong>调试信息:</strong> 执行偏移 \${config.executionOffset || 0} 秒 (约 \${Math.floor((config.executionOffset || 0) / 60)}:\${String((config.executionOffset || 0) % 60).padStart(2, '0')})
                     </div>
                     <button class="\${config.isActive ? 'danger' : 'success'}" onclick="toggleConfig('\${config.configId}')">
                         \${config.isActive ? '停止' : '启动'}
@@ -481,7 +467,15 @@ async function executeHangupTasks(env: Env, ctx: ExecutionContext) {
   try {
     console.log('=== 开始执行挂机任务 ===');
     const currentTime = new Date();
-    const currentSecond = currentTime.getSeconds() + currentTime.getMinutes() * 60;
+    
+    // 修复：正确计算当前在5分钟周期内的位置
+    const currentMinute = currentTime.getMinutes();
+    const currentSecond = currentTime.getSeconds();
+    const currentCyclePosition = (currentMinute % 5) * 60 + currentSecond;
+    
+    console.log(`当前时间: ${currentTime.toISOString()}`);
+    console.log(`当前分钟: ${currentMinute}, 当前秒: ${currentSecond}`);
+    console.log(`当前周期位置: ${currentCyclePosition} 秒 (${Math.floor(currentCyclePosition/60)}:${String(currentCyclePosition%60).padStart(2, '0')})`);
     
     const allKeys = await env.KV_BINDING.list({ prefix: 'stv_config:' });
     console.log(`找到 ${allKeys.keys.length} 个配置`);
@@ -500,17 +494,21 @@ async function executeHangupTasks(env: Env, ctx: ExecutionContext) {
         }
         
         const offset = config.executionOffset || 0;
-        const targetSecond = offset % 300;
+        const targetPosition = offset % 300;
+        const timeDiff = Math.abs(currentCyclePosition - targetPosition);
         
-        console.log(`配置 ${config.configName}: 当前秒数=${currentSecond}, 目标秒数=${targetSecond}, 偏移差=${Math.abs(currentSecond - targetSecond)}`);
+        console.log(`配置 ${config.configName}:`);
+        console.log(`  - 执行偏移: ${offset} 秒`);
+        console.log(`  - 目标位置: ${targetPosition} 秒 (${Math.floor(targetPosition/60)}:${String(targetPosition%60).padStart(2, '0')})`);
+        console.log(`  - 时间差: ${timeDiff} 秒`);
         
-        // 使用30秒的执行窗口
-        if (Math.abs(currentSecond - targetSecond) <= 30) {
+        // 使用90秒的执行窗口，确保不会错过
+        if (timeDiff <= 90) {
           console.log(`✅ 执行配置 ${config.configName}`);
           await executeHangupRequest(config, env);
           executedCount++;
         } else {
-          console.log(`⏭️ 跳过配置 ${config.configName}，时间窗口不匹配`);
+          console.log(`⏭️ 跳过配置 ${config.configName}，时间窗口不匹配 (差距: ${timeDiff} 秒)`);
         }
       } catch (error) {
         console.error(`❌ 处理配置 ${key.name} 时出错:`, error);
@@ -543,7 +541,6 @@ async function executeHangupRequest(config: UserConfig, env: Env) {
     const result = await response.text();
     const success = response.ok && (result.includes('success') || result.includes('ok') || response.status === 200);
     
-    // 更新配置信息
     config.lastExecuted = new Date().toISOString();
     config.lastResult = success ? '✅ 成功' : `❌ 失败: ${result.substring(0, 100)}`;
     config.executionCount = (config.executionCount || 0) + 1;
@@ -569,28 +566,23 @@ async function executeHangupRequest(config: UserConfig, env: Env) {
 
 function calculateNextExecution(offset: number): string {
   const now = new Date();
-  const currentMinutes = now.getMinutes();
-  const currentSeconds = now.getSeconds();
-  const currentTotalSeconds = currentMinutes * 60 + currentSeconds;
+  const currentMinute = now.getMinutes();
+  const currentSecond = now.getSeconds();
+  const currentCyclePosition = (currentMinute % 5) * 60 + currentSecond;
   
-  const targetSeconds = offset % 300; // 5分钟内的秒数
+  const targetPosition = offset % 300;
   
   let nextExecution = new Date(now);
   
-  if (currentTotalSeconds < targetSeconds) {
+  if (currentCyclePosition < targetPosition) {
     // 本5分钟周期内还没到执行时间
-    nextExecution.setSeconds(targetSeconds % 60);
-    nextExecution.setMinutes(Math.floor(now.getMinutes() / 5) * 5 + Math.floor(targetSeconds / 60));
+    const secondsToAdd = targetPosition - currentCyclePosition;
+    nextExecution.setTime(nextExecution.getTime() + secondsToAdd * 1000);
   } else {
     // 本5分钟周期已过，计算下个周期
-    const nextCycle = Math.floor(now.getMinutes() / 5) * 5 + 5;
-    if (nextCycle >= 60) {
-      nextExecution.setHours(nextExecution.getHours() + 1);
-      nextExecution.setMinutes(Math.floor(targetSeconds / 60));
-    } else {
-      nextExecution.setMinutes(nextCycle + Math.floor(targetSeconds / 60));
-    }
-    nextExecution.setSeconds(targetSeconds % 60);
+    const secondsToNextCycle = 300 - currentCyclePosition;
+    const secondsToAdd = secondsToNextCycle + targetPosition;
+    nextExecution.setTime(nextExecution.getTime() + secondsToAdd * 1000);
   }
   
   return nextExecution.toISOString();
@@ -605,7 +597,6 @@ async function getUserConfigs(userId: string, env: Env): Promise<UserConfig[]> {
       const configData = await env.KV_BINDING.get(key.name);
       if (configData) {
         const config: UserConfig = JSON.parse(configData);
-        // 不返回敏感的 cookie 信息到前端
         delete (config as any).cookie;
         configs.push(config);
       }
