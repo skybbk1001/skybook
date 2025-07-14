@@ -163,8 +163,7 @@ async function serveHangupPage(env: Env): Promise<Response> {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>STV 自动挂机管理系统</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <title>STV 自动挂机管理</title>
     <style>
         * {
             margin: 0;
@@ -173,80 +172,63 @@ async function serveHangupPage(env: Env): Promise<Response> {
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
         }
 
-        .main-container {
+        .container {
             max-width: 1000px;
             margin: 0 auto;
+            padding: 20px;
         }
 
         .header {
             text-align: center;
             margin-bottom: 30px;
-            color: white;
+            padding: 30px 0;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
         .header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            font-size: 2rem;
+            color: #2c3e50;
+            margin-bottom: 8px;
         }
 
-        .header .subtitle {
-            font-size: 1.1rem;
-            opacity: 0.9;
+        .header p {
+            color: #7f8c8d;
+            font-size: 1rem;
         }
 
         .card {
             background: white;
-            border-radius: 15px;
+            border-radius: 8px;
             padding: 25px;
-            margin-bottom: 25px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 15px 40px rgba(0,0,0,0.25);
-        }
-
-        .card-header {
-            display: flex;
-            align-items: center;
             margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #f0f0f0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
-        .card-header i {
-            font-size: 1.5rem;
-            margin-right: 10px;
-            color: #667eea;
+        .card h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.3rem;
         }
 
-        .card-header h2 {
-            color: #333;
-            font-size: 1.4rem;
-        }
-
-        .info-banner {
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            color: white;
-            padding: 20px;
-            border-radius: 12px;
+        .info-box {
+            background: #e8f4fd;
+            border-left: 4px solid #3498db;
+            padding: 15px;
             margin-bottom: 25px;
-            text-align: center;
+            border-radius: 4px;
         }
 
-        .info-banner i {
-            font-size: 2rem;
-            margin-bottom: 10px;
-            display: block;
+        .info-box h3 {
+            color: #2980b9;
+            margin-bottom: 5px;
         }
 
         .form-group {
@@ -255,88 +237,91 @@ async function serveHangupPage(env: Env): Promise<Response> {
 
         .form-group label {
             display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #333;
+            margin-bottom: 6px;
+            font-weight: 500;
+            color: #2c3e50;
         }
 
         .form-control {
             width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #e1e5e9;
-            border-radius: 8px;
-            font-size: 16px;
-            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 4px;
+            font-size: 14px;
         }
 
         .form-control:focus {
             outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            border-color: #3498db;
         }
 
         .btn {
-            padding: 12px 25px;
+            padding: 10px 20px;
             border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
             cursor: pointer;
-            transition: all 0.3s ease;
             margin-right: 10px;
             margin-bottom: 10px;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
         }
 
         .btn-primary {
-            background: linear-gradient(45deg, #667eea, #764ba2);
+            background: #3498db;
             color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2980b9;
         }
 
         .btn-success {
-            background: linear-gradient(45deg, #56ab2f, #a8e6cf);
+            background: #27ae60;
             color: white;
+        }
+
+        .btn-success:hover {
+            background: #229954;
         }
 
         .btn-danger {
-            background: linear-gradient(45deg, #ff416c, #ff4b2b);
+            background: #e74c3c;
             color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c0392b;
         }
 
         .btn-warning {
-            background: linear-gradient(45deg, #f093fb, #f5576c);
+            background: #f39c12;
             color: white;
         }
 
+        .btn-warning:hover {
+            background: #e67e22;
+        }
+
         .btn-info {
-            background: linear-gradient(45deg, #4facfe, #00f2fe);
+            background: #17a2b8;
             color: white;
+        }
+
+        .btn-info:hover {
+            background: #138496;
         }
 
         .config-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 20px;
         }
 
-        .config-card {
-            background: linear-gradient(145deg, #f8f9fa, #e9ecef);
-            border-radius: 12px;
+        .config-item {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
             padding: 20px;
-            border-left: 5px solid #667eea;
-            transition: all 0.3s ease;
-        }
-
-        .config-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
         }
 
         .config-header {
@@ -344,31 +329,32 @@ async function serveHangupPage(env: Env): Promise<Response> {
             justify-content: space-between;
             align-items: center;
             margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #f0f0f0;
         }
 
         .config-title {
-            font-size: 1.3rem;
-            font-weight: bold;
-            color: #333;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #2c3e50;
         }
 
-        .status-badge {
-            padding: 6px 12px;
-            border-radius: 20px;
+        .status {
+            padding: 4px 8px;
+            border-radius: 4px;
             font-size: 12px;
-            font-weight: 600;
+            font-weight: 500;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
         }
 
         .status-active {
-            background: linear-gradient(45deg, #56ab2f, #a8e6cf);
-            color: white;
+            background: #d5f4e6;
+            color: #27ae60;
         }
 
         .status-inactive {
-            background: linear-gradient(45deg, #ff416c, #ff4b2b);
-            color: white;
+            background: #fadbd8;
+            color: #e74c3c;
         }
 
         .config-info {
@@ -377,14 +363,8 @@ async function serveHangupPage(env: Env): Promise<Response> {
 
         .config-info-item {
             display: flex;
-            margin-bottom: 8px;
-            align-items: center;
-        }
-
-        .config-info-item i {
-            width: 20px;
-            color: #667eea;
-            margin-right: 10px;
+            margin-bottom: 6px;
+            font-size: 14px;
         }
 
         .config-info-item strong {
@@ -394,48 +374,50 @@ async function serveHangupPage(env: Env): Promise<Response> {
 
         .config-actions {
             display: flex;
-            gap: 10px;
+            gap: 8px;
             flex-wrap: wrap;
         }
 
         .message {
-            padding: 12px 15px;
-            border-radius: 8px;
+            padding: 12px;
+            border-radius: 4px;
             margin-top: 15px;
-            font-weight: 500;
         }
 
         .message.success {
-            background: linear-gradient(45deg, #d4edda, #c3e6cb);
-            color: #155724;
-            border-left: 4px solid #28a745;
+            background: #d5f4e6;
+            color: #27ae60;
+            border: 1px solid #a9dfbf;
         }
 
         .message.error {
-            background: linear-gradient(45deg, #f8d7da, #f1b0b7);
-            color: #721c24;
-            border-left: 4px solid #dc3545;
+            background: #fadbd8;
+            color: #e74c3c;
+            border: 1px solid #f1948a;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+        }
+
+        .empty-state h3 {
+            margin-bottom: 10px;
+            color: #95a5a6;
         }
 
         .hidden {
             display: none;
         }
 
-        .empty-state {
-            text-align: center;
-            padding: 40px;
-            color: #666;
-        }
-
-        .empty-state i {
-            font-size: 3rem;
-            margin-bottom: 20px;
-            color: #ccc;
-        }
-
         @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
             .header h1 {
-                font-size: 2rem;
+                font-size: 1.5rem;
             }
             
             .card {
@@ -446,88 +428,56 @@ async function serveHangupPage(env: Env): Promise<Response> {
                 grid-template-columns: 1fr;
             }
         }
-
-        .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255,255,255,.3);
-            border-radius: 50%;
-            border-top-color: #fff;
-            animation: spin 1s ease-in-out infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
     </style>
 </head>
 <body>
-    <div class="main-container">
+    <div class="container">
         <div class="header">
-            <h1><i class="fas fa-robot"></i> STV 自动挂机管理系统</h1>
-            <p class="subtitle">智能化自动保持在线状态</p>
+            <h1>STV 自动挂机管理</h1>
+            <p>简单高效的在线状态保持工具</p>
         </div>
         
-        <div class="info-banner">
-            <i class="fas fa-clock"></i>
-            <h3>系统每4分钟自动执行一次所有启用的配置</h3>
-            <p>添加配置后无需手动干预，系统将自动为您保持在线状态</p>
+        <div class="info-box">
+            <h3>系统自动执行</h3>
+            <p>每4分钟自动执行一次所有启用的配置，无需手动干预</p>
         </div>
         
         <div class="card">
-            <div class="card-header">
-                <i class="fas fa-user"></i>
-                <h2>用户身份设置</h2>
-            </div>
+            <h2>用户设置</h2>
             <div class="form-group">
-                <label for="userId"><i class="fas fa-id-card"></i> 用户名</label>
+                <label for="userId">用户名</label>
                 <input type="text" id="userId" class="form-control" placeholder="请输入您的用户名">
             </div>
-            <button class="btn btn-primary" onclick="setUser()">
-                <i class="fas fa-sign-in-alt"></i> 设置用户
-            </button>
+            <button class="btn btn-primary" onclick="setUser()">设置用户</button>
             <div id="userMessage"></div>
         </div>
 
         <div id="configSection" class="hidden">
             <div class="card">
-                <div class="card-header">
-                    <i class="fas fa-plus-circle"></i>
-                    <h2>添加新配置</h2>
-                </div>
+                <h2>添加新配置</h2>
                 <form id="configForm">
                     <div class="form-group">
-                        <label for="configName"><i class="fas fa-tag"></i> 配置名称</label>
-                        <input type="text" id="configName" class="form-control" placeholder="例如：主号、小号1、备用账号 等" required>
+                        <label for="configName">配置名称</label>
+                        <input type="text" id="configName" class="form-control" placeholder="例如：主号、小号1 等" required>
                     </div>
                     <div class="form-group">
-                        <label for="stvUID"><i class="fas fa-hashtag"></i> STV 用户ID</label>
+                        <label for="stvUID">STV 用户ID</label>
                         <input type="text" id="stvUID" class="form-control" placeholder="您的 STV 用户ID" required>
                     </div>
                     <div class="form-group">
-                        <label for="cookie"><i class="fas fa-cookie-bite"></i> Cookie 信息</label>
+                        <label for="cookie">Cookie</label>
                         <textarea id="cookie" class="form-control" rows="4" placeholder="请粘贴完整的 Cookie 内容" required></textarea>
                     </div>
-                    <button type="submit" class="btn btn-success">
-                        <i class="fas fa-save"></i> 保存配置
-                    </button>
+                    <button type="submit" class="btn btn-success">保存配置</button>
                 </form>
                 <div id="configMessage"></div>
             </div>
 
             <div class="card">
-                <div class="card-header">
-                    <i class="fas fa-list"></i>
-                    <h2>我的配置管理</h2>
-                </div>
+                <h2>配置管理</h2>
                 <div style="margin-bottom: 20px;">
-                    <button class="btn btn-info" onclick="loadConfigs()">
-                        <i class="fas fa-sync-alt"></i> 刷新列表
-                    </button>
-                    <button class="btn btn-warning" onclick="manualExecute()">
-                        <i class="fas fa-play"></i> 立即执行一次
-                    </button>
+                    <button class="btn btn-info" onclick="loadConfigs()">刷新列表</button>
+                    <button class="btn btn-warning" onclick="manualExecute()">立即执行</button>
                 </div>
                 <div id="configsList"></div>
             </div>
@@ -547,11 +497,6 @@ async function serveHangupPage(env: Env): Promise<Response> {
                     return;
                 }
 
-                const submitBtn = event.target.querySelector('button[type="submit"]');
-                const originalText = submitBtn.innerHTML;
-                submitBtn.innerHTML = '<div class="loading"></div> 保存中...';
-                submitBtn.disabled = true;
-
                 const formData = {
                     userId: currentUserId,
                     configName: document.getElementById('configName').value.trim(),
@@ -561,8 +506,6 @@ async function serveHangupPage(env: Env): Promise<Response> {
 
                 if (!formData.configName || !formData.stvUID || !formData.cookie) {
                     showMessage('configMessage', '请填写所有字段', 'error');
-                    submitBtn.innerHTML = originalText;
-                    submitBtn.disabled = false;
                     return;
                 }
 
@@ -586,9 +529,6 @@ async function serveHangupPage(env: Env): Promise<Response> {
                     console.error('Save error:', error);
                     showMessage('configMessage', '保存过程中发生错误', 'error');
                 }
-
-                submitBtn.innerHTML = originalText;
-                submitBtn.disabled = false;
             });
         });
 
@@ -606,11 +546,6 @@ async function serveHangupPage(env: Env): Promise<Response> {
         }
 
         async function manualExecute() {
-            const btn = event.target;
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '<div class="loading"></div> 执行中...';
-            btn.disabled = true;
-
             try {
                 const response = await fetch('/api/hangup/execute', {
                     method: 'POST',
@@ -619,16 +554,13 @@ async function serveHangupPage(env: Env): Promise<Response> {
                 
                 const result = await response.json();
                 if (result.success) {
-                    alert('✅ 手动执行完成，请刷新配置列表查看结果');
+                    alert('手动执行完成，请刷新配置列表查看结果');
                     loadConfigs();
                 }
             } catch (error) {
                 console.error('Manual execute error:', error);
-                alert('❌ 手动执行失败');
+                alert('手动执行失败');
             }
-
-            btn.innerHTML = originalText;
-            btn.disabled = false;
         }
 
         async function loadConfigs() {
@@ -651,9 +583,8 @@ async function serveHangupPage(env: Env): Promise<Response> {
             if (configs.length === 0) {
                 container.innerHTML = \`
                     <div class="empty-state">
-                        <i class="fas fa-inbox"></i>
                         <h3>暂无配置</h3>
-                        <p>点击上方"添加新配置"开始创建您的第一个挂机配置</p>
+                        <p>点击上方"添加新配置"开始创建您的第一个配置</p>
                     </div>
                 \`;
                 return;
@@ -662,43 +593,35 @@ async function serveHangupPage(env: Env): Promise<Response> {
             container.innerHTML = \`
                 <div class="config-grid">
                     \${configs.map(config => \`
-                        <div class="config-card">
+                        <div class="config-item">
                             <div class="config-header">
                                 <div class="config-title">\${config.configName}</div>
-                                <div class="status-badge \${config.isActive ? 'status-active' : 'status-inactive'}">
+                                <div class="status \${config.isActive ? 'status-active' : 'status-inactive'}">
                                     \${config.isActive ? '运行中' : '已停止'}
                                 </div>
                             </div>
                             <div class="config-info">
                                 <div class="config-info-item">
-                                    <i class="fas fa-hashtag"></i>
                                     <strong>STV ID:</strong> \${config.stvUID}
                                 </div>
                                 <div class="config-info-item">
-                                    <i class="fas fa-chart-line"></i>
                                     <strong>执行次数:</strong> \${config.executionCount || 0} 次
                                 </div>
                                 <div class="config-info-item">
-                                    <i class="fas fa-clock"></i>
                                     <strong>上次执行:</strong> \${config.lastExecuted ? new Date(config.lastExecuted).toLocaleString() : '未执行'}
                                 </div>
                                 <div class="config-info-item">
-                                    <i class="fas fa-check-circle"></i>
                                     <strong>执行结果:</strong> \${config.lastResult || '无'}
                                 </div>
                                 <div class="config-info-item">
-                                    <i class="fas fa-calendar-plus"></i>
                                     <strong>创建时间:</strong> \${new Date(config.createdAt).toLocaleString()}
                                 </div>
                             </div>
                             <div class="config-actions">
                                 <button class="btn \${config.isActive ? 'btn-danger' : 'btn-success'}" onclick="toggleConfig('\${config.configId}')">
-                                    <i class="fas \${config.isActive ? 'fa-stop' : 'fa-play'}"></i>
                                     \${config.isActive ? '停止' : '启动'}
                                 </button>
-                                <button class="btn btn-danger" onclick="deleteConfig('\${config.configId}')">
-                                    <i class="fas fa-trash"></i> 删除
-                                </button>
+                                <button class="btn btn-danger" onclick="deleteConfig('\${config.configId}')">删除</button>
                             </div>
                         </div>
                     \`).join('')}
@@ -724,7 +647,7 @@ async function serveHangupPage(env: Env): Promise<Response> {
         }
 
         async function deleteConfig(configId) {
-            if (!confirm('🗑️ 确定要删除这个配置吗？此操作不可恢复！')) return;
+            if (!confirm('确定要删除这个配置吗？')) return;
 
             try {
                 const response = await fetch(\`/api/hangup/configs/\${configId}\`, {
