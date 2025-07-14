@@ -444,7 +444,7 @@ async function serveHangupPage(env: Env): Promise<Response> {
                     </div>
                     <div class="form-group">
                         <label for="stvUID">STV 用户ID</label>
-                        <input type="text" id="stvUID" class="form-control" placeholder="您的 STV 用户ID" required>
+                        <input type="text" id="stvUID" class="form-control" placeholder="您的 STV 用户ID(6位数字)" required>
                     </div>
                     <div class="form-group">
                         <label for="cookie">Cookie</label>
