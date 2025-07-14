@@ -1,7 +1,17 @@
 {
   "name": "skybook",
   "compatibility_date": "2025-01-14",
+  "main": "./worker.ts",
   "assets": {
-    "directory": "./"
+    "directory": "./",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "kv_namespaces": [{
+    "binding": "KV_BINDING",
+    "id": "ebfa290f4b5f442a88f5039a313829d9"
+  }],
+  "triggers": {
+    "crons": ["*/5 * * * *"]
   }
 }
