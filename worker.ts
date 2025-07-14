@@ -15,7 +15,7 @@ interface UserConfig {
   lastResult?: string;
   createdAt: string;
   userToken: string;
-  executionOffset?: number; // 执行偏移量（分钟内的秒数）
+  executionOffset?: number;
 }
 
 interface UserAuth {
@@ -39,7 +39,6 @@ export default {
     return env.ASSETS.fetch(request);
   },
 
-  // Cron 触发器处理 - 每分钟检查一次
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     await executeHangupTasks(env);
   }
@@ -57,43 +56,63 @@ function generateUserToken(userId: string): string {
   return btoa(`${userId}_${timestamp}_${randomStr}`);
 }
 
-// 生成执行偏移量（0-59秒，分散请求时间）
+// 生成执行偏移量
 function generateExecutionOffset(): number {
   return Math.floor(Math.random() * 60);
 }
 
 // 验证用户身份
 async function verifyUserAuth(userId: string, userToken: string, env: Env): Promise<boolean> {
-  if (!userId || !userToken) return false;
-  
-  const authKey = `auth:${userId}`;
-  const authData = await env.KV_BINDING.get(authKey);
-  
-  if (!authData) return false;
-  
-  const auth: UserAuth = JSON.parse(authData);
-  return auth.userToken === userToken;
+  try {
+    if (!userId || !userToken) {
+      console.log('验证失败: 缺少用户ID或令牌');
+      return false;
+    }
+    
+    const authKey = `auth:${userId}`;
+    const authData = await env.KV_BINDING.get(authKey);
+    
+    if (!authData) {
+      console.log(`验证失败: 未找到用户 ${userId} 的认证信息`);
+      return false;
+    }
+    
+    const auth: UserAuth = JSON.parse(authData);
+    const isValid = auth.userToken === userToken;
+    console.log(`用户 ${userId} 验证结果: ${isValid}`);
+    return isValid;
+  } catch (error) {
+    console.error('验证用户身份时出错:', error);
+    return false;
+  }
 }
 
 // 创建或获取用户身份验证
 async function createOrGetUserAuth(userId: string, env: Env): Promise<string> {
-  const authKey = `auth:${userId}`;
-  const existingAuth = await env.KV_BINDING.get(authKey);
-  
-  if (existingAuth) {
-    const auth: UserAuth = JSON.parse(existingAuth);
-    return auth.userToken;
+  try {
+    const authKey = `auth:${userId}`;
+    const existingAuth = await env.KV_BINDING.get(authKey);
+    
+    if (existingAuth) {
+      const auth: UserAuth = JSON.parse(existingAuth);
+      console.log(`用户 ${userId} 使用现有令牌`);
+      return auth.userToken;
+    }
+    
+    const userToken = generateUserToken(userId);
+    const auth: UserAuth = {
+      userId,
+      userToken,
+      createdAt: new Date().toISOString()
+    };
+    
+    await env.KV_BINDING.put(authKey, JSON.stringify(auth));
+    console.log(`用户 ${userId} 创建新令牌`);
+    return userToken;
+  } catch (error) {
+    console.error('创建或获取用户认证时出错:', error);
+    throw error;
   }
-  
-  const userToken = generateUserToken(userId);
-  const auth: UserAuth = {
-    userId,
-    userToken,
-    createdAt: new Date().toISOString()
-  };
-  
-  await env.KV_BINDING.put(authKey, JSON.stringify(auth));
-  return userToken;
 }
 
 // 处理 API 请求
@@ -109,6 +128,7 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
   }
 
   const path = url.pathname;
+  console.log(`API 请求: ${request.method} ${path}`);
 
   try {
     switch (path) {
@@ -151,8 +171,12 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
     });
 
   } catch (error) {
-    console.error('API Error:', error);
-    return new Response(JSON.stringify({ error: 'Internal Server Error' }), { 
+    console.error('API 处理错误:', error);
+    return new Response(JSON.stringify({ 
+      error: 'Internal Server Error', 
+      details: error.message,
+      stack: error.stack 
+    }), { 
       status: 500, 
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
@@ -161,24 +185,38 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
 
 // 用户登录
 async function loginUser(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
-  const { userId } = await request.json();
+  try {
+    const body = await request.json();
+    console.log('登录请求体:', body);
+    
+    const { userId } = body;
 
-  if (!userId || userId.trim().length < 3) {
-    return new Response(JSON.stringify({ error: '用户ID必须至少3个字符' }), {
-      status: 400,
+    if (!userId || userId.trim().length < 3) {
+      return new Response(JSON.stringify({ error: '用户ID必须至少3个字符' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const userToken = await createOrGetUserAuth(userId.trim(), env);
+
+    return new Response(JSON.stringify({ 
+      success: true, 
+      userToken,
+      message: '登录成功' 
+    }), {
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  } catch (error) {
+    console.error('登录处理错误:', error);
+    return new Response(JSON.stringify({ 
+      error: '登录失败', 
+      details: error.message 
+    }), {
+      status: 500,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
   }
-
-  const userToken = await createOrGetUserAuth(userId.trim(), env);
-
-  return new Response(JSON.stringify({ 
-    success: true, 
-    userToken,
-    message: '登录成功' 
-  }), {
-    headers: { 'Content-Type': 'application/json', ...corsHeaders }
-  });
 }
 
 // 获取用户身份信息
@@ -195,89 +233,126 @@ async function getUserFromRequest(request: Request): Promise<{ userId: string, u
       }
     } else {
       const body = await request.json();
+      console.log('请求体数据:', body);
       if (body.userId && body.userToken) {
         authData = { userId: body.userId, userToken: body.userToken };
       }
     }
     
+    console.log('解析的认证数据:', authData);
     return authData || null;
-  } catch {
+  } catch (error) {
+    console.error('获取用户信息时出错:', error);
     return null;
   }
 }
 
 // 保存用户配置
 async function saveUserConfig(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
-  const authData = await getUserFromRequest(request);
-  if (!authData) {
-    return new Response(JSON.stringify({ error: '缺少身份验证信息' }), {
-      status: 401,
+  try {
+    console.log('开始保存用户配置');
+    
+    // 先克隆请求，因为我们需要多次读取body
+    const requestClone = request.clone();
+    
+    const authData = await getUserFromRequest(requestClone);
+    console.log('获取到的认证数据:', authData);
+    
+    if (!authData) {
+      return new Response(JSON.stringify({ error: '缺少身份验证信息' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    console.log('开始验证用户身份');
+    const isValid = await verifyUserAuth(authData.userId, authData.userToken, env);
+    if (!isValid) {
+      return new Response(JSON.stringify({ error: '身份验证失败' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const body = await request.json();
+    console.log('配置数据:', { 
+      configName: body.configName, 
+      stvUID: body.stvUID, 
+      cookieLength: body.cookie ? body.cookie.length : 0 
+    });
+    
+    const { configName, stvUID, cookie } = body;
+
+    if (!configName || !stvUID || !cookie) {
+      return new Response(JSON.stringify({ error: '缺少必要参数：配置名称、STV UID 和 Cookie' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const configId = generateConfigId();
+    const executionOffset = generateExecutionOffset();
+    
+    console.log(`生成配置ID: ${configId}, 执行偏移量: ${executionOffset}`);
+    
+    const config: UserConfig = {
+      configId,
+      userId: authData.userId,
+      configName: configName.trim(),
+      stvUID: stvUID.trim(),
+      cookie: cookie.trim(),
+      isActive: true,
+      userToken: authData.userToken,
+      executionOffset: executionOffset,
+      createdAt: new Date().toISOString()
+    };
+
+    const key = `stv_config:${authData.userId}:${configId}`;
+    console.log(`保存到 KV，键: ${key}`);
+    
+    await env.KV_BINDING.put(key, JSON.stringify(config));
+    console.log('配置保存成功');
+
+    return new Response(JSON.stringify({ 
+      success: true, 
+      configId,
+      message: `配置 "${configName}" 保存成功，将在每个5分钟周期的第 ${executionOffset} 秒执行` 
+    }), {
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+    
+  } catch (error) {
+    console.error('保存配置时出错:', error);
+    return new Response(JSON.stringify({ 
+      error: '保存配置失败', 
+      details: error.message,
+      stack: error.stack 
+    }), {
+      status: 500,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
   }
-
-  const isValid = await verifyUserAuth(authData.userId, authData.userToken, env);
-  if (!isValid) {
-    return new Response(JSON.stringify({ error: '身份验证失败' }), {
-      status: 403,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    });
-  }
-
-  const body = await request.clone().json();
-  const { configName, stvUID, cookie } = body;
-
-  if (!configName || !stvUID || !cookie) {
-    return new Response(JSON.stringify({ error: '缺少必要参数：配置名称、STV UID 和 Cookie' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    });
-  }
-
-  const configId = generateConfigId();
-  const config: UserConfig = {
-    configId,
-    userId: authData.userId,
-    configName: configName.trim(),
-    stvUID: stvUID.trim(),
-    cookie: cookie.trim(),
-    isActive: true,
-    userToken: authData.userToken,
-    executionOffset: generateExecutionOffset(), // 随机分配执行偏移量
-    createdAt: new Date().toISOString()
-  };
-
-  const key = `stv_config:${authData.userId}:${configId}`;
-  await env.KV_BINDING.put(key, JSON.stringify(config));
-
-  return new Response(JSON.stringify({ 
-    success: true, 
-    configId,
-    message: `配置 "${configName}" 保存成功，将在每个5分钟周期的第 ${config.executionOffset} 秒执行` 
-  }), {
-    headers: { 'Content-Type': 'application/json', ...corsHeaders }
-  });
 }
 
 // 获取用户所有配置
 async function getUserConfigs(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
-  const authData = await getUserFromRequest(request);
-  if (!authData) {
-    return new Response(JSON.stringify({ error: '缺少身份验证信息' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    });
-  }
-
-  const isValid = await verifyUserAuth(authData.userId, authData.userToken, env);
-  if (!isValid) {
-    return new Response(JSON.stringify({ error: '身份验证失败' }), {
-      status: 403,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    });
-  }
-
   try {
+    const authData = await getUserFromRequest(request);
+    if (!authData) {
+      return new Response(JSON.stringify({ error: '缺少身份验证信息' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const isValid = await verifyUserAuth(authData.userId, authData.userToken, env);
+    if (!isValid) {
+      return new Response(JSON.stringify({ error: '身份验证失败' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
     const { keys } = await env.KV_BINDING.list({ prefix: `stv_config:${authData.userId}:` });
     
     const configs = [];
@@ -303,7 +378,11 @@ async function getUserConfigs(request: Request, env: Env, corsHeaders: Record<st
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: '获取配置失败' }), {
+    console.error('获取配置时出错:', error);
+    return new Response(JSON.stringify({ 
+      error: '获取配置失败', 
+      details: error.message 
+    }), {
       status: 500,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
@@ -312,121 +391,146 @@ async function getUserConfigs(request: Request, env: Env, corsHeaders: Record<st
 
 // 切换配置状态
 async function toggleConfig(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
-  const authData = await getUserFromRequest(request);
-  if (!authData) {
-    return new Response(JSON.stringify({ error: '缺少身份验证信息' }), {
-      status: 401,
+  try {
+    const authData = await getUserFromRequest(request);
+    if (!authData) {
+      return new Response(JSON.stringify({ error: '缺少身份验证信息' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const isValid = await verifyUserAuth(authData.userId, authData.userToken, env);
+    if (!isValid) {
+      return new Response(JSON.stringify({ error: '身份验证失败' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const body = await request.clone().json();
+    const { configId, isActive } = body;
+
+    const key = `stv_config:${authData.userId}:${configId}`;
+    const configData = await env.KV_BINDING.get(key);
+    
+    if (!configData) {
+      return new Response(JSON.stringify({ error: '配置不存在' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const config: UserConfig = JSON.parse(configData);
+    config.isActive = isActive;
+
+    await env.KV_BINDING.put(key, JSON.stringify(config));
+
+    return new Response(JSON.stringify({ 
+      success: true, 
+      message: `配置 "${config.configName}" ${isActive ? '已启动' : '已停止'}` 
+    }), {
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  } catch (error) {
+    console.error('切换配置时出错:', error);
+    return new Response(JSON.stringify({ 
+      error: '切换配置失败', 
+      details: error.message 
+    }), {
+      status: 500,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
   }
-
-  const isValid = await verifyUserAuth(authData.userId, authData.userToken, env);
-  if (!isValid) {
-    return new Response(JSON.stringify({ error: '身份验证失败' }), {
-      status: 403,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    });
-  }
-
-  const { configId, isActive } = await request.clone().json();
-
-  const key = `stv_config:${authData.userId}:${configId}`;
-  const configData = await env.KV_BINDING.get(key);
-  
-  if (!configData) {
-    return new Response(JSON.stringify({ error: '配置不存在' }), {
-      status: 404,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    });
-  }
-
-  const config: UserConfig = JSON.parse(configData);
-  config.isActive = isActive;
-
-  await env.KV_BINDING.put(key, JSON.stringify(config));
-
-  return new Response(JSON.stringify({ 
-    success: true, 
-    message: `配置 "${config.configName}" ${isActive ? '已启动' : '已停止'}` 
-  }), {
-    headers: { 'Content-Type': 'application/json', ...corsHeaders }
-  });
 }
 
 // 删除配置
 async function deleteConfig(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
-  const authData = await getUserFromRequest(request);
-  if (!authData) {
-    return new Response(JSON.stringify({ error: '缺少身份验证信息' }), {
-      status: 401,
+  try {
+    const authData = await getUserFromRequest(request);
+    if (!authData) {
+      return new Response(JSON.stringify({ error: '缺少身份验证信息' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const isValid = await verifyUserAuth(authData.userId, authData.userToken, env);
+    if (!isValid) {
+      return new Response(JSON.stringify({ error: '身份验证失败' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const body = await request.clone().json();
+    const { configId } = body;
+
+    const key = `stv_config:${authData.userId}:${configId}`;
+    const configData = await env.KV_BINDING.get(key);
+    
+    if (!configData) {
+      return new Response(JSON.stringify({ error: '配置不存在' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const config: UserConfig = JSON.parse(configData);
+    await env.KV_BINDING.delete(key);
+
+    return new Response(JSON.stringify({ 
+      success: true, 
+      message: `配置 "${config.configName}" 已删除` 
+    }), {
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  } catch (error) {
+    console.error('删除配置时出错:', error);
+    return new Response(JSON.stringify({ 
+      error: '删除配置失败', 
+      details: error.message 
+    }), {
+      status: 500,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
   }
-
-  const isValid = await verifyUserAuth(authData.userId, authData.userToken, env);
-  if (!isValid) {
-    return new Response(JSON.stringify({ error: '身份验证失败' }), {
-      status: 403,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    });
-  }
-
-  const { configId } = await request.clone().json();
-
-  const key = `stv_config:${authData.userId}:${configId}`;
-  const configData = await env.KV_BINDING.get(key);
-  
-  if (!configData) {
-    return new Response(JSON.stringify({ error: '配置不存在' }), {
-      status: 404,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    });
-  }
-
-  const config: UserConfig = JSON.parse(configData);
-  await env.KV_BINDING.delete(key);
-
-  return new Response(JSON.stringify({ 
-    success: true, 
-    message: `配置 "${config.configName}" 已删除` 
-  }), {
-    headers: { 'Content-Type': 'application/json', ...corsHeaders }
-  });
 }
 
 // 测试配置
 async function testConfig(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
-  const authData = await getUserFromRequest(request);
-  if (!authData) {
-    return new Response(JSON.stringify({ error: '缺少身份验证信息' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    });
-  }
-
-  const isValid = await verifyUserAuth(authData.userId, authData.userToken, env);
-  if (!isValid) {
-    return new Response(JSON.stringify({ error: '身份验证失败' }), {
-      status: 403,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    });
-  }
-
-  const { configId } = await request.clone().json();
-
-  const key = `stv_config:${authData.userId}:${configId}`;
-  const configData = await env.KV_BINDING.get(key);
-  
-  if (!configData) {
-    return new Response(JSON.stringify({ error: '配置不存在' }), {
-      status: 404,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    });
-  }
-
-  const config: UserConfig = JSON.parse(configData);
-  
   try {
+    const authData = await getUserFromRequest(request);
+    if (!authData) {
+      return new Response(JSON.stringify({ error: '缺少身份验证信息' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const isValid = await verifyUserAuth(authData.userId, authData.userToken, env);
+    if (!isValid) {
+      return new Response(JSON.stringify({ error: '身份验证失败' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const body = await request.clone().json();
+    const { configId } = body;
+
+    const key = `stv_config:${authData.userId}:${configId}`;
+    const configData = await env.KV_BINDING.get(key);
+    
+    if (!configData) {
+      return new Response(JSON.stringify({ error: '配置不存在' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
+
+    const config: UserConfig = JSON.parse(configData);
+    
     const result = await executeSTVOnlineRequest(config);
     return new Response(JSON.stringify({ 
       success: true, 
@@ -436,17 +540,19 @@ async function testConfig(request: Request, env: Env, corsHeaders: Record<string
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
   } catch (error) {
+    console.error('测试配置时出错:', error);
     return new Response(JSON.stringify({ 
       success: false, 
       message: '测试请求失败', 
       error: error.message 
     }), {
+      status: 500,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
   }
 }
 
-// 执行所有挂机任务（固定5分钟间隔 + 分散执行）
+// 执行所有挂机任务
 async function executeHangupTasks(env: Env): Promise<void> {
   const currentTime = new Date();
   const currentSeconds = currentTime.getSeconds();
@@ -469,13 +575,11 @@ async function executeHangupTasks(env: Env): Promise<void> {
         if (config.isActive) {
           checkedCount++;
           
-          // 检查是否到了5分钟间隔
           const shouldExecuteByTime = shouldExecuteNow(config.lastExecuted);
           
           if (shouldExecuteByTime) {
             scheduledCount++;
             
-            // 检查是否到了当前配置的执行时机（基于偏移量）
             const shouldExecuteNow = currentSeconds === (config.executionOffset || 0);
             
             if (shouldExecuteNow) {
@@ -484,7 +588,6 @@ async function executeHangupTasks(env: Env): Promise<void> {
                 const result = await executeSTVOnlineRequest(config);
                 successCount++;
                 
-                // 更新最后执行时间和结果
                 config.lastExecuted = currentTime.toISOString();
                 config.lastResult = `成功: ${result.substring(0, 100)}`;
                 await env.KV_BINDING.put(key.name, JSON.stringify(config));
@@ -494,13 +597,10 @@ async function executeHangupTasks(env: Env): Promise<void> {
               } catch (error) {
                 console.error(`用户 ${config.userId} 配置 "${config.configName}" 在线保持失败:`, error);
                 
-                // 更新失败结果
                 config.lastExecuted = currentTime.toISOString();
                 config.lastResult = `失败: ${error.message}`;
                 await env.KV_BINDING.put(key.name, JSON.stringify(config));
               }
-            } else {
-              console.log(`配置 "${config.configName}" 等待执行时机 (偏移量: ${config.executionOffset}秒, 当前: ${currentSeconds}秒)`);
             }
           }
         }
@@ -516,15 +616,15 @@ async function executeHangupTasks(env: Env): Promise<void> {
   }
 }
 
-// 判断是否应该执行请求（固定5分钟间隔）
+// 判断是否应该执行请求
 function shouldExecuteNow(lastExecuted: string | undefined): boolean {
-  if (!lastExecuted) return true; // 从未执行过
+  if (!lastExecuted) return true;
   
   const lastTime = new Date(lastExecuted);
   const currentTime = new Date();
   const diffMinutes = (currentTime.getTime() - lastTime.getTime()) / (1000 * 60);
   
-  return diffMinutes >= 5; // 固定5分钟间隔
+  return diffMinutes >= 5;
 }
 
 // 执行 STV 在线请求
@@ -568,47 +668,25 @@ async function executeSTVOnlineRequest(config: UserConfig): Promise<string> {
   return responseText;
 }
 
-// 提供挂机管理页面
+// 提供挂机管理页面 (保持不变)
 function serveHangupPage(env: Env): Response {
-  const html = `
-<!DOCTYPE html>
+  // ... 页面HTML代码保持不变 ...
+  const html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>STV 在线保持系统</title>
     <style>
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-            max-width: 1000px; 
-            margin: 0 auto; 
-            padding: 20px; 
-            background: #f5f5f5;
-        }
+        /* 样式保持不变 */
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
         .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         .login-container { max-width: 400px; margin: 50px auto; }
         .form-group { margin-bottom: 20px; }
         label { display: block; margin-bottom: 8px; font-weight: 600; color: #333; }
-        input, textarea { 
-            width: 100%; 
-            padding: 12px; 
-            border: 1px solid #ddd; 
-            border-radius: 6px; 
-            font-size: 14px;
-            box-sizing: border-box;
-        }
+        input, textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; box-sizing: border-box; }
         textarea { resize: vertical; min-height: 80px; }
-        button { 
-            background: #007cba; 
-            color: white; 
-            padding: 12px 24px; 
-            border: none; 
-            border-radius: 6px; 
-            cursor: pointer; 
-            font-size: 14px;
-            margin-right: 10px;
-            margin-bottom: 10px;
-        }
+        button { background: #007cba; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; margin-right: 10px; margin-bottom: 10px; }
         button:hover { background: #005a87; }
         button.danger { background: #dc3545; }
         button.danger:hover { background: #c82333; }
@@ -619,22 +697,10 @@ function serveHangupPage(env: Env): Response {
         .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
-        .config-item { 
-            border: 1px solid #ddd; 
-            padding: 20px; 
-            margin: 15px 0; 
-            border-radius: 6px; 
-            background: #fafafa;
-        }
+        .config-item { border: 1px solid #ddd; padding: 20px; margin: 15px 0; border-radius: 6px; background: #fafafa; }
         .config-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         .config-title { font-size: 18px; font-weight: 600; color: #333; }
-        .status-badge { 
-            padding: 4px 12px; 
-            border-radius: 20px; 
-            font-size: 12px; 
-            font-weight: 600;
-            text-transform: uppercase;
-        }
+        .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
         .status-active { background: #d4edda; color: #155724; }
         .status-inactive { background: #f8d7da; color: #721c24; }
         .help-text { font-size: 12px; color: #666; margin-top: 5px; }
@@ -657,7 +723,6 @@ function serveHangupPage(env: Env): Response {
     </style>
 </head>
 <body>
-    <!-- 登录界面 -->
     <div id="login-page" class="login-container">
         <div class="container">
             <h1>STV 在线保持系统</h1>
@@ -681,7 +746,6 @@ function serveHangupPage(env: Env): Response {
         </div>
     </div>
 
-    <!-- 主界面 -->
     <div id="main-page" class="container hidden">
         <div class="config-header">
             <h1>STV 在线保持系统</h1>
@@ -697,13 +761,11 @@ function serveHangupPage(env: Env): Response {
             <div class="tab" onclick="switchTab('add')">添加配置</div>
         </div>
         
-        <!-- 配置列表标签页 -->
         <div id="configs-tab" class="tab-content active">
             <button class="add-config-btn" onclick="switchTab('add')">+ 添加新配置</button>
             <div id="configsList"></div>
         </div>
         
-        <!-- 添加配置标签页 -->
         <div id="add-tab" class="tab-content">
             <div class="status info">
                 <strong>说明：</strong>系统每5分钟自动发送在线保持请求，每个配置会在不同时机执行以避免集中请求。
@@ -855,6 +917,8 @@ function serveHangupPage(env: Env): Response {
             }
             
             try {
+                console.log('发送保存请求，数据:', { ...data, cookie: data.cookie.substring(0, 50) + '...' });
+                
                 const response = await fetch('/api/hangup/configs', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -862,13 +926,16 @@ function serveHangupPage(env: Env): Response {
                 });
                 
                 const result = await response.json();
-                showStatus(result.message || result.error, response.ok ? 'success' : 'error');
+                console.log('保存响应:', result);
+                
+                showStatus(result.message || result.error || JSON.stringify(result), response.ok ? 'success' : 'error');
                 
                 if (response.ok) {
                     clearAddForm();
                     switchTab('configs');
                 }
             } catch (error) {
+                console.error('保存配置错误:', error);
                 showStatus('保存失败: ' + error.message, 'error');
             }
         }
@@ -1023,8 +1090,7 @@ function serveHangupPage(env: Env): Response {
         }
     </script>
 </body>
-</html>
-  `;
+</html>`;
 
   return new Response(html, {
     headers: { 'Content-Type': 'text/html; charset=utf-8' }
