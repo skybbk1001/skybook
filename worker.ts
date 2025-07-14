@@ -715,7 +715,7 @@ async function executeHangupRequest(config: UserConfig, env: Env) {
     });
 
     const result = await response.text();
-    const success = response.ok && /\d+/.test(result)
+    const success = response.ok && /^\d+$/.test(result.trim());
     
     config.lastExecuted = new Date().toISOString();
     config.lastResult = success ? '✅ 成功' : `❌ 失败: ${result.substring(0, 100)}`;
