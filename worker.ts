@@ -422,6 +422,7 @@ async function serveHangupPage(env: Env): Promise<Response> {
         <div class="header">
             <h1>STV 自动挂机管理</h1>
             <p>简单高效的在线状态保持工具</p>
+            <p>作者：明月照大江</p>
         </div>
         
         <div class="card">
