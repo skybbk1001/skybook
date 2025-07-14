@@ -6,11 +6,18 @@ interface Env {
 
 interface UserConfig {
   userId: string;
-  stvUID: string;  // 用户的 stv UID
+  stvUID: string;
   cookie: string;
   isActive: boolean;
   lastExecuted?: string;
   lastResult?: string;
+  createdAt: string;
+  userToken: string; // 用户身份验证令牌
+}
+
+interface UserAuth {
+  userId: string;
+  userToken: string;
   createdAt: string;
 }
 
@@ -38,12 +45,54 @@ export default {
   }
 };
 
+// 生成用户令牌
+function generateUserToken(userId: string): string {
+  const timestamp = Date.now().toString();
+  const randomStr = Math.random().toString(36).substring(2);
+  return btoa(`${userId}_${timestamp}_${randomStr}`);
+}
+
+// 验证用户身份
+async function verifyUserAuth(userId: string, userToken: string, env: Env): Promise<boolean> {
+  if (!userId || !userToken) return false;
+  
+  const authKey = `auth:${userId}`;
+  const authData = await env.KV_BINDING.get(authKey);
+  
+  if (!authData) return false;
+  
+  const auth: UserAuth = JSON.parse(authData);
+  return auth.userToken === userToken;
+}
+
+// 创建或获取用户身份验证
+async function createOrGetUserAuth(userId: string, env: Env): Promise<string> {
+  const authKey = `auth:${userId}`;
+  const existingAuth = await env.KV_BINDING.get(authKey);
+  
+  if (existingAuth) {
+    const auth: UserAuth = JSON.parse(existingAuth);
+    return auth.userToken;
+  }
+  
+  // 创建新的用户身份验证
+  const userToken = generateUserToken(userId);
+  const auth: UserAuth = {
+    userId,
+    userToken,
+    createdAt: new Date().toISOString()
+  };
+  
+  await env.KV_BINDING.put(authKey, JSON.stringify(auth));
+  return userToken;
+}
+
 // 处理 API 请求
 async function handleApiRequest(request: Request, url: URL, env: Env): Promise<Response> {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   };
 
   if (request.method === 'OPTIONS') {
@@ -54,11 +103,17 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
 
   try {
     switch (path) {
+      case '/api/hangup/login':
+        if (request.method === 'POST') {
+          return await loginUser(request, env, corsHeaders);
+        }
+        break;
+
       case '/api/hangup/config':
         if (request.method === 'POST') {
           return await saveUserConfig(request, env, corsHeaders);
         } else if (request.method === 'GET') {
-          return await getUserConfig(url, env, corsHeaders);
+          return await getUserConfig(request, env, corsHeaders);
         }
         break;
 
@@ -79,12 +134,6 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
           return await testHangupRequest(request, env, corsHeaders);
         }
         break;
-
-      case '/api/hangup/list':
-        if (request.method === 'GET') {
-          return await listAllConfigs(env, corsHeaders);
-        }
-        break;
     }
 
     return new Response('API endpoint not found', { 
@@ -101,48 +150,120 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
   }
 }
 
+// 用户登录/获取令牌
+async function loginUser(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+  const { userId } = await request.json();
+
+  if (!userId || userId.trim().length < 3) {
+    return new Response(JSON.stringify({ error: '用户ID必须至少3个字符' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
+
+  const userToken = await createOrGetUserAuth(userId.trim(), env);
+
+  return new Response(JSON.stringify({ 
+    success: true, 
+    userToken,
+    message: '登录成功' 
+  }), {
+    headers: { 'Content-Type': 'application/json', ...corsHeaders }
+  });
+}
+
+// 从请求中获取用户身份信息
+async function getUserFromRequest(request: Request): Promise<{ userId: string, userToken: string } | null> {
+  try {
+    let authData;
+    
+    if (request.method === 'GET') {
+      const url = new URL(request.url);
+      const userId = url.searchParams.get('userId');
+      const userToken = url.searchParams.get('userToken');
+      if (userId && userToken) {
+        authData = { userId, userToken };
+      }
+    } else {
+      const body = await request.json();
+      if (body.userId && body.userToken) {
+        authData = { userId: body.userId, userToken: body.userToken };
+      }
+    }
+    
+    return authData || null;
+  } catch {
+    return null;
+  }
+}
+
 // 保存用户配置
 async function saveUserConfig(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
-  const { userId, stvUID, cookie } = await request.json();
+  const authData = await getUserFromRequest(request);
+  if (!authData) {
+    return new Response(JSON.stringify({ error: '缺少身份验证信息' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
 
-  if (!userId || !stvUID || !cookie) {
-    return new Response(JSON.stringify({ error: '缺少必要参数：用户ID、STV UID 和 Cookie' }), {
+  const isValid = await verifyUserAuth(authData.userId, authData.userToken, env);
+  if (!isValid) {
+    return new Response(JSON.stringify({ error: '身份验证失败' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
+
+  const body = await request.clone().json();
+  const { stvUID, cookie } = body;
+
+  if (!stvUID || !cookie) {
+    return new Response(JSON.stringify({ error: '缺少必要参数：STV UID 和 Cookie' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
   }
 
   const config: UserConfig = {
-    userId,
-    stvUID,
-    cookie,
+    userId: authData.userId,
+    stvUID: stvUID.trim(),
+    cookie: cookie.trim(),
     isActive: true,
+    userToken: authData.userToken,
     createdAt: new Date().toISOString()
   };
 
-  const key = `stv_config:${userId}`;
+  const key = `stv_config:${authData.userId}`;
   await env.KV_BINDING.put(key, JSON.stringify(config));
 
   return new Response(JSON.stringify({ 
     success: true, 
-    message: `用户 ${userId} 的挂机配置保存成功，将保持 STV UID ${stvUID} 在线状态` 
+    message: `用户 ${authData.userId} 的挂机配置保存成功，将保持 STV UID ${stvUID} 在线状态` 
   }), {
     headers: { 'Content-Type': 'application/json', ...corsHeaders }
   });
 }
 
 // 获取用户配置
-async function getUserConfig(url: URL, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
-  const userId = url.searchParams.get('userId');
-  
-  if (!userId) {
-    return new Response(JSON.stringify({ error: '请提供用户ID' }), {
-      status: 400,
+async function getUserConfig(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
+  const authData = await getUserFromRequest(request);
+  if (!authData) {
+    return new Response(JSON.stringify({ error: '缺少身份验证信息' }), {
+      status: 401,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
   }
 
-  const key = `stv_config:${userId}`;
+  const isValid = await verifyUserAuth(authData.userId, authData.userToken, env);
+  if (!isValid) {
+    return new Response(JSON.stringify({ error: '身份验证失败' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
+
+  const key = `stv_config:${authData.userId}`;
   const configData = await env.KV_BINDING.get(key);
   
   if (!configData) {
@@ -154,7 +275,7 @@ async function getUserConfig(url: URL, env: Env, corsHeaders: Record<string, str
 
   const config: UserConfig = JSON.parse(configData);
   
-  // 不返回敏感的 cookie 信息
+  // 只返回当前用户的配置（不包含敏感信息）
   return new Response(JSON.stringify({
     userId: config.userId,
     stvUID: config.stvUID,
@@ -170,9 +291,25 @@ async function getUserConfig(url: URL, env: Env, corsHeaders: Record<string, str
 
 // 切换挂机状态
 async function toggleHangup(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
-  const { userId, isActive } = await request.json();
+  const authData = await getUserFromRequest(request);
+  if (!authData) {
+    return new Response(JSON.stringify({ error: '缺少身份验证信息' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
 
-  const key = `stv_config:${userId}`;
+  const isValid = await verifyUserAuth(authData.userId, authData.userToken, env);
+  if (!isValid) {
+    return new Response(JSON.stringify({ error: '身份验证失败' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
+
+  const { isActive } = await request.clone().json();
+
+  const key = `stv_config:${authData.userId}`;
   const configData = await env.KV_BINDING.get(key);
   
   if (!configData) {
@@ -189,7 +326,7 @@ async function toggleHangup(request: Request, env: Env, corsHeaders: Record<stri
 
   return new Response(JSON.stringify({ 
     success: true, 
-    message: isActive ? `用户 ${userId} 挂机已启动` : `用户 ${userId} 挂机已停止` 
+    message: isActive ? `用户 ${authData.userId} 挂机已启动` : `用户 ${authData.userId} 挂机已停止` 
   }), {
     headers: { 'Content-Type': 'application/json', ...corsHeaders }
   });
@@ -197,14 +334,31 @@ async function toggleHangup(request: Request, env: Env, corsHeaders: Record<stri
 
 // 删除用户配置
 async function deleteUserConfig(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
-  const { userId } = await request.json();
+  const authData = await getUserFromRequest(request);
+  if (!authData) {
+    return new Response(JSON.stringify({ error: '缺少身份验证信息' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
 
-  const key = `stv_config:${userId}`;
-  await env.KV_BINDING.delete(key);
+  const isValid = await verifyUserAuth(authData.userId, authData.userToken, env);
+  if (!isValid) {
+    return new Response(JSON.stringify({ error: '身份验证失败' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
+
+  const configKey = `stv_config:${authData.userId}`;
+  const authKey = `auth:${authData.userId}`;
+  
+  await env.KV_BINDING.delete(configKey);
+  await env.KV_BINDING.delete(authKey);
 
   return new Response(JSON.stringify({ 
     success: true, 
-    message: `用户 ${userId} 的配置已删除` 
+    message: `用户 ${authData.userId} 的配置已删除` 
   }), {
     headers: { 'Content-Type': 'application/json', ...corsHeaders }
   });
@@ -212,9 +366,23 @@ async function deleteUserConfig(request: Request, env: Env, corsHeaders: Record<
 
 // 测试挂机请求
 async function testHangupRequest(request: Request, env: Env, corsHeaders: Record<string, string>): Promise<Response> {
-  const { userId } = await request.json();
+  const authData = await getUserFromRequest(request);
+  if (!authData) {
+    return new Response(JSON.stringify({ error: '缺少身份验证信息' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
 
-  const key = `stv_config:${userId}`;
+  const isValid = await verifyUserAuth(authData.userId, authData.userToken, env);
+  if (!isValid) {
+    return new Response(JSON.stringify({ error: '身份验证失败' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
+
+  const key = `stv_config:${authData.userId}`;
   const configData = await env.KV_BINDING.get(key);
   
   if (!configData) {
@@ -241,38 +409,6 @@ async function testHangupRequest(request: Request, env: Env, corsHeaders: Record
       message: '测试请求失败', 
       error: error.message 
     }), {
-      headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    });
-  }
-}
-
-// 列出所有配置（用于管理）
-async function listAllConfigs(env: Env, corsHeaders: Record<string, string>): Promise<Response> {
-  try {
-    const { keys } = await env.KV_BINDING.list({ prefix: 'stv_config:' });
-    
-    const configs = [];
-    for (const key of keys) {
-      const configData = await env.KV_BINDING.get(key.name);
-      if (configData) {
-        const config: UserConfig = JSON.parse(configData);
-        configs.push({
-          userId: config.userId,
-          stvUID: config.stvUID,
-          isActive: config.isActive,
-          lastExecuted: config.lastExecuted,
-          lastResult: config.lastResult,
-          createdAt: config.createdAt
-        });
-      }
-    }
-
-    return new Response(JSON.stringify({ configs }), {
-      headers: { 'Content-Type': 'application/json', ...corsHeaders }
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ error: '获取配置列表失败' }), {
-      status: 500,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
   }
@@ -329,13 +465,11 @@ async function executeHangupTasks(env: Env): Promise<void> {
 async function executeSTVOnlineRequest(config: UserConfig): Promise<string> {
   const url = 'https://sangtacviet.app/io/user/online';
   
-  // 构建查询参数
   const params = new URLSearchParams({
     ngmar: 'ol2',
     u: config.stvUID
   });
   
-  // 构建请求体
   const body = new URLSearchParams({
     sajax: 'online',
     ngmar: 'ol'
@@ -361,7 +495,6 @@ async function executeSTVOnlineRequest(config: UserConfig): Promise<string> {
 
   const responseText = await response.text();
   
-  // 检查响应内容判断是否成功
   if (responseText.includes('Bạn chưa đăng nhập')) {
     throw new Error('Cookie 已失效，请重新登录获取新的 Cookie');
   }
@@ -387,6 +520,7 @@ function serveHangupPage(env: Env): Response {
             background: #f5f5f5;
         }
         .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .login-container { max-width: 400px; margin: 50px auto; }
         .form-group { margin-bottom: 20px; }
         label { display: block; margin-bottom: 8px; font-weight: 600; color: #333; }
         input, textarea { 
@@ -438,88 +572,160 @@ function serveHangupPage(env: Env): Response {
         .status-inactive { background: #f8d7da; color: #721c24; }
         .help-text { font-size: 12px; color: #666; margin-top: 5px; }
         h1 { color: #333; text-align: center; margin-bottom: 30px; }
-        .tabs { display: flex; margin-bottom: 20px; border-bottom: 1px solid #ddd; }
-        .tab { padding: 10px 20px; cursor: pointer; border-bottom: 2px solid transparent; }
-        .tab.active { border-bottom-color: #007cba; color: #007cba; font-weight: 600; }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
+        .hidden { display: none; }
+        .user-info { background: #e7f3ff; padding: 10px; border-radius: 6px; margin-bottom: 20px; }
+        .logout-btn { background: #6c757d; }
+        .logout-btn:hover { background: #545b62; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>STV 在线保持系统</h1>
+    <!-- 登录界面 -->
+    <div id="login-page" class="login-container">
+        <div class="container">
+            <h1>STV 在线保持系统</h1>
+            <div class="status info">
+                <strong>用户隔离说明：</strong>每个用户只能查看和管理自己的配置，数据完全隔离。
+            </div>
+            
+            <div class="form-group">
+                <label for="loginUserId">用户ID:</label>
+                <input type="text" id="loginUserId" placeholder="请输入你的用户ID（至少3个字符）">
+                <div class="help-text">这将作为你的唯一标识，请记住此ID</div>
+            </div>
+            
+            <button onclick="login()">登录/注册</button>
+            <div id="loginStatus"></div>
+        </div>
+    </div>
+
+    <!-- 主界面 -->
+    <div id="main-page" class="container hidden">
+        <div class="config-header">
+            <h1>STV 在线保持系统</h1>
+            <button class="logout-btn" onclick="logout()">退出登录</button>
+        </div>
+        
+        <div class="user-info">
+            <strong>当前用户：</strong><span id="currentUser"></span>
+        </div>
         
         <div class="status info">
             <strong>说明：</strong>本系统每5分钟自动向 sangtacviet.app 发送在线保持请求，防止账号离线。
         </div>
         
-        <div class="tabs">
-            <div class="tab active" onclick="switchTab('config')">配置管理</div>
-            <div class="tab" onclick="switchTab('monitor')">运行监控</div>
+        <div class="form-group">
+            <label for="stvUID">STV UID:</label>
+            <input type="text" id="stvUID" placeholder="请输入你的 STV UID">
+            <div class="help-text">在 sangtacviet.app 个人资料页面可以找到你的 UID</div>
         </div>
         
-        <div id="config-tab" class="tab-content active">
-            <div class="form-group">
-                <label for="userId">用户ID:</label>
-                <input type="text" id="userId" placeholder="请输入唯一的用户标识">
-                <div class="help-text">用于识别你的配置，建议使用你的昵称或用户名</div>
+        <div class="form-group">
+            <label for="cookie">Cookie:</label>
+            <textarea id="cookie" placeholder="请粘贴从浏览器复制的完整 Cookie"></textarea>
+            <div class="help-text">
+                获取方法：F12 开发者工具 → Network → 刷新页面 → 点击任意请求 → Request Headers → 复制 Cookie 值
             </div>
-            
-            <div class="form-group">
-                <label for="stvUID">STV UID:</label>
-                <input type="text" id="stvUID" placeholder="请输入你的 STV UID">
-                <div class="help-text">在 sangtacviet.app 个人资料页面可以找到你的 UID</div>
-            </div>
-            
-            <div class="form-group">
-                <label for="cookie">Cookie:</label>
-                <textarea id="cookie" placeholder="请粘贴从浏览器复制的完整 Cookie"></textarea>
-                <div class="help-text">
-                    获取方法：F12 开发者工具 → Network → 刷新页面 → 点击任意请求 → Request Headers → 复制 Cookie 值
-                </div>
-            </div>
-            
-            <button onclick="saveConfig()">保存配置</button>
-            <button onclick="testRequest()">测试连接</button>
-            <button onclick="loadConfig()">加载配置</button>
         </div>
         
-        <div id="monitor-tab" class="tab-content">
-            <button onclick="loadAllConfigs()">刷新列表</button>
-            <div id="configsList"></div>
-        </div>
+        <button onclick="saveConfig()">保存配置</button>
+        <button onclick="testRequest()">测试连接</button>
+        <button onclick="loadConfig()">刷新状态</button>
         
         <div id="status"></div>
         <div id="configDisplay"></div>
     </div>
 
     <script>
-        function switchTab(tabName) {
-            // 隐藏所有标签内容
-            document.querySelectorAll('.tab-content').forEach(content => {
-                content.classList.remove('active');
-            });
-            document.querySelectorAll('.tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
+        let currentUserId = '';
+        let currentUserToken = '';
+        
+        // 页面加载时检查是否已登录
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedUserId = localStorage.getItem('stvUserId');
+            const savedUserToken = localStorage.getItem('stvUserToken');
             
-            // 显示选中的标签
-            document.getElementById(tabName + '-tab').classList.add('active');
-            event.target.classList.add('active');
-            
-            if (tabName === 'monitor') {
-                loadAllConfigs();
+            if (savedUserId && savedUserToken) {
+                currentUserId = savedUserId;
+                currentUserToken = savedUserToken;
+                showMainPage();
+                loadConfig();
+            } else {
+                showLoginPage();
             }
+        });
+        
+        function showLoginPage() {
+            document.getElementById('login-page').classList.remove('hidden');
+            document.getElementById('main-page').classList.add('hidden');
+        }
+        
+        function showMainPage() {
+            document.getElementById('login-page').classList.add('hidden');
+            document.getElementById('main-page').classList.remove('hidden');
+            document.getElementById('currentUser').textContent = currentUserId;
+        }
+        
+        async function login() {
+            const userId = document.getElementById('loginUserId').value.trim();
+            
+            if (!userId || userId.length < 3) {
+                showLoginStatus('用户ID必须至少3个字符', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/hangup/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    currentUserId = userId;
+                    currentUserToken = result.userToken;
+                    
+                    // 保存到本地存储
+                    localStorage.setItem('stvUserId', userId);
+                    localStorage.setItem('stvUserToken', result.userToken);
+                    
+                    showLoginStatus(result.message, 'success');
+                    setTimeout(() => {
+                        showMainPage();
+                        loadConfig();
+                    }, 1000);
+                } else {
+                    showLoginStatus(result.error, 'error');
+                }
+            } catch (error) {
+                showLoginStatus('登录失败: ' + error.message, 'error');
+            }
+        }
+        
+        function logout() {
+            currentUserId = '';
+            currentUserToken = '';
+            localStorage.removeItem('stvUserId');
+            localStorage.removeItem('stvUserToken');
+            showLoginPage();
+            document.getElementById('loginUserId').value = '';
+        }
+        
+        function showLoginStatus(message, type) {
+            const statusDiv = document.getElementById('loginStatus');
+            statusDiv.innerHTML = \`<div class="status \${type}">\${message}</div>\`;
         }
         
         async function saveConfig() {
             const data = {
-                userId: document.getElementById('userId').value.trim(),
+                userId: currentUserId,
+                userToken: currentUserToken,
                 stvUID: document.getElementById('stvUID').value.trim(),
                 cookie: document.getElementById('cookie').value.trim()
             };
             
-            if (!data.userId || !data.stvUID || !data.cookie) {
+            if (!data.stvUID || !data.cookie) {
                 showStatus('请填写完整信息', 'error');
                 return;
             }
@@ -532,7 +738,7 @@ function serveHangupPage(env: Env): Response {
                 });
                 
                 const result = await response.json();
-                showStatus(result.message, response.ok ? 'success' : 'error');
+                showStatus(result.message || result.error, response.ok ? 'success' : 'error');
                 
                 if (response.ok) {
                     loadConfig();
@@ -543,9 +749,8 @@ function serveHangupPage(env: Env): Response {
         }
         
         async function testRequest() {
-            const userId = document.getElementById('userId').value.trim();
-            if (!userId) {
-                showStatus('请先输入用户ID', 'error');
+            if (!currentUserId || !currentUserToken) {
+                showStatus('请先登录', 'error');
                 return;
             }
             
@@ -555,7 +760,10 @@ function serveHangupPage(env: Env): Response {
                 const response = await fetch('/api/hangup/test', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId })
+                    body: JSON.stringify({ 
+                        userId: currentUserId, 
+                        userToken: currentUserToken 
+                    })
                 });
                 
                 const result = await response.json();
@@ -567,18 +775,19 @@ function serveHangupPage(env: Env): Response {
         }
         
         async function loadConfig() {
-            const userId = document.getElementById('userId').value.trim();
-            if (!userId) {
-                showStatus('请先输入用户ID', 'error');
+            if (!currentUserId || !currentUserToken) {
+                showStatus('请先登录', 'error');
                 return;
             }
             
             try {
-                const response = await fetch('/api/hangup/config?userId=' + encodeURIComponent(userId));
+                const response = await fetch(\`/api/hangup/config?userId=\${encodeURIComponent(currentUserId)}&userToken=\${encodeURIComponent(currentUserToken)}\`);
                 const config = await response.json();
                 
                 if (response.ok) {
                     displayConfig(config);
+                } else if (response.status === 404) {
+                    document.getElementById('configDisplay').innerHTML = '<div class="status info">暂无配置，请先保存配置</div>';
                 } else {
                     showStatus(config.error, 'error');
                 }
@@ -587,27 +796,16 @@ function serveHangupPage(env: Env): Response {
             }
         }
         
-        async function loadAllConfigs() {
-            try {
-                const response = await fetch('/api/hangup/list');
-                const data = await response.json();
-                
-                if (response.ok) {
-                    displayAllConfigs(data.configs);
-                } else {
-                    showStatus('加载配置列表失败', 'error');
-                }
-            } catch (error) {
-                showStatus('加载失败: ' + error.message, 'error');
-            }
-        }
-        
-        async function toggleHangup(userId, isActive) {
+        async function toggleHangup(isActive) {
             try {
                 const response = await fetch('/api/hangup/toggle', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId, isActive })
+                    body: JSON.stringify({ 
+                        userId: currentUserId, 
+                        userToken: currentUserToken, 
+                        isActive 
+                    })
                 });
                 
                 const result = await response.json();
@@ -615,14 +813,13 @@ function serveHangupPage(env: Env): Response {
                 
                 if (response.ok) {
                     loadConfig();
-                    loadAllConfigs();
                 }
             } catch (error) {
                 showStatus('操作失败: ' + error.message, 'error');
             }
         }
         
-        async function deleteConfig(userId) {
+        async function deleteConfig() {
             if (!confirm('确定要删除这个配置吗？')) {
                 return;
             }
@@ -631,7 +828,10 @@ function serveHangupPage(env: Env): Response {
                 const response = await fetch('/api/hangup/delete', {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId })
+                    body: JSON.stringify({ 
+                        userId: currentUserId, 
+                        userToken: currentUserToken 
+                    })
                 });
                 
                 const result = await response.json();
@@ -639,7 +839,7 @@ function serveHangupPage(env: Env): Response {
                 
                 if (response.ok) {
                     document.getElementById('configDisplay').innerHTML = '';
-                    loadAllConfigs();
+                    logout(); // 删除配置后退出登录
                 }
             } catch (error) {
                 showStatus('删除失败: ' + error.message, 'error');
@@ -650,7 +850,6 @@ function serveHangupPage(env: Env): Response {
             const statusDiv = document.getElementById('status');
             statusDiv.innerHTML = \`<div class="status \${type}">\${message}</div>\`;
             
-            // 自动隐藏成功消息
             if (type === 'success') {
                 setTimeout(() => {
                     statusDiv.innerHTML = '';
@@ -666,7 +865,7 @@ function serveHangupPage(env: Env): Response {
             display.innerHTML = \`
                 <div class="config-item">
                     <div class="config-header">
-                        <div class="config-title">当前配置</div>
+                        <div class="config-title">我的配置</div>
                         <div class="status-badge \${statusClass}">\${statusText}</div>
                     </div>
                     <p><strong>用户ID:</strong> \${config.userId}</p>
@@ -676,55 +875,13 @@ function serveHangupPage(env: Env): Response {
                     <p><strong>执行结果:</strong> \${config.lastResult || '无'}</p>
                     <p><strong>创建时间:</strong> \${new Date(config.createdAt).toLocaleString()}</p>
                     
-                    <button class="\${config.isActive ? 'danger' : 'success'}" onclick="toggleHangup('\${config.userId}', \${!config.isActive})">
+                    <button class="\${config.isActive ? 'danger' : 'success'}" onclick="toggleHangup(\${!config.isActive})">
                         \${config.isActive ? '停止挂机' : '启动挂机'}
                     </button>
-                    <button class="danger" onclick="deleteConfig('\${config.userId}')">删除配置</button>
+                    <button class="danger" onclick="deleteConfig()">删除配置</button>
                 </div>
             \`;
         }
-        
-        function displayAllConfigs(configs) {
-            const display = document.getElementById('configsList');
-            
-            if (configs.length === 0) {
-                display.innerHTML = '<div class="status info">暂无配置</div>';
-                return;
-            }
-            
-            let html = '';
-            configs.forEach(config => {
-                const statusClass = config.isActive ? 'status-active' : 'status-inactive';
-                const statusText = config.isActive ? '运行中' : '已停止';
-                
-                html += \`
-                    <div class="config-item">
-                        <div class="config-header">
-                            <div class="config-title">\${config.userId}</div>
-                            <div class="status-badge \${statusClass}">\${statusText}</div>
-                        </div>
-                        <p><strong>STV UID:</strong> \${config.stvUID}</p>
-                        <p><strong>最后执行:</strong> \${config.lastExecuted ? new Date(config.lastExecuted).toLocaleString() : '从未执行'}</p>
-                        <p><strong>执行结果:</strong> \${config.lastResult || '无'}</p>
-                        
-                        <button class="\${config.isActive ? 'danger' : 'success'}" onclick="toggleHangup('\${config.userId}', \${!config.isActive})">
-                            \${config.isActive ? '停止' : '启动'}
-                        </button>
-                        <button class="danger" onclick="deleteConfig('\${config.userId}')">删除</button>
-                    </div>
-                \`;
-            });
-            
-            display.innerHTML = html;
-        }
-        
-        // 页面加载时自动加载配置
-        document.addEventListener('DOMContentLoaded', () => {
-            const userId = document.getElementById('userId').value;
-            if (userId) {
-                loadConfig();
-            }
-        });
     </script>
 </body>
 </html>
