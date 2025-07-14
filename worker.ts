@@ -218,19 +218,6 @@ async function serveHangupPage(env: Env): Promise<Response> {
             font-size: 1.3rem;
         }
 
-        .info-box {
-            background: #e8f4fd;
-            border-left: 4px solid #3498db;
-            padding: 15px;
-            margin-bottom: 25px;
-            border-radius: 4px;
-        }
-
-        .info-box h3 {
-            color: #2980b9;
-            margin-bottom: 5px;
-        }
-
         .form-group {
             margin-bottom: 20px;
         }
@@ -437,18 +424,13 @@ async function serveHangupPage(env: Env): Promise<Response> {
             <p>简单高效的在线状态保持工具</p>
         </div>
         
-        <div class="info-box">
-            <h3>系统自动执行</h3>
-            <p>每4分钟自动执行一次所有启用的配置，无需手动干预</p>
-        </div>
-        
         <div class="card">
             <h2>用户设置</h2>
             <div class="form-group">
                 <label for="userId">用户名</label>
-                <input type="text" id="userId" class="form-control" placeholder="请输入您的用户名">
+                <input type="text" id="userId" class="form-control" placeholder="请输入您的唯一用户标识，未注册将自动注册">
             </div>
-            <button class="btn btn-primary" onclick="setUser()">设置用户</button>
+            <button class="btn btn-primary" onclick="setUser()">登录/注册</button>
             <div id="userMessage"></div>
         </div>
 
