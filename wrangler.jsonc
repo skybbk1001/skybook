@@ -7,11 +7,19 @@
     "binding": "ASSETS",
     "run_worker_first": true
   },
-  "kv_namespaces": [{
-    "binding": "KV_BINDING",
-    "id": "ebfa290f4b5f442a88f5039a313829d9"
-  }],
+  "kv_namespaces": [
+    {
+      "binding": "KV_BINDING",
+      "id": "ebfa290f4b5f442a88f5039a313829d9"
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
   "triggers": {
-    "crons": ["*/4 * * * *"]
+    "crons": [
+      "*/4 * * * *"
+    ]
   }
 }
