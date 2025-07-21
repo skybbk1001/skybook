@@ -3,10 +3,11 @@
 
   Theme.loading = {
     register: function () {
-      document.getElementsByClassName('loading-wrapper')
-        .forEach(element => element.removeAttribute('data-loading'));
-      document.getElementsByClassName('page')
-        .forEach(element => element.removeAttribute('data-filter'));
+      document.querySelectorAll('.loading-wrapper').forEach(el => el.removeAttribute('data-loading'));
+      document.querySelectorAll('.page').forEach(el => el.removeAttribute('data-filter'));
     }
   };
+
+  Theme.loading.register();
+
 }.call(this));
