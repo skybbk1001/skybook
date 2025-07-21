@@ -2203,7 +2203,7 @@ s {
   width: 90%;
   max-width: 1080px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(75%, 1fr));
+  grid-template-columns: minmax(75%, 800px) auto;
   grid-column-gap: 20px;
 }
 .main[data-page="post"] {
