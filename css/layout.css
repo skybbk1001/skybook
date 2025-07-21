@@ -15,6 +15,11 @@ body {
   list-style: none;
   text-decoration: none;
 }
+.article-pauthor {
+  font-size: 0.9em;
+  color: #888;
+  margin-bottom: 1em;
+}
 img {
   max-width: 100%;
   height: auto;
