@@ -34,39 +34,48 @@ document.addEventListener('DOMContentLoaded', async function () {
     const response = await fetch('/content.json');
     const rawData = await response.json();
 
-    // 处理数据结构
     const posts = Array.isArray(rawData)
       ? rawData
       : Array.isArray(rawData.posts)
       ? rawData.posts
       : [].concat(rawData);
 
-    const activities = posts.flatMap(post => {
+    // --- 主要修改区域开始 ---
+    // 使用 .map 为每篇文章生成唯一的动态（发布或更新）
+    const activities = posts.map(post => {
       const { title = '无标题', permalink = post.path || '#', author = '明月', date, updated } = post;
-      const activityList = [];
 
-      if (date) {
-        activityList.push({
-          type: 'publish',
-          date: new Date(date),
-          title,
-          permalink: permalink.replace(/^/,"/"),
-          author
-        });
+      // 如果文章没有发布日期，则跳过
+      if (!date) {
+        return null;
       }
 
-      if (updated && (!date || new Date(updated) > new Date(date))) {
-        activityList.push({
-          type: 'update',
-          date: new Date(updated),
-          title,
-          permalink: permalink.replace(/^/,"/"),
-          author
-        });
-      }
+      const publishDate = new Date(date);
+      let effectiveDate = publishDate;
+      let activityType = 'publish';
+      
+      const sixHoursInMs = 6 * 60 * 60 * 1000; // 6小时的毫秒数
 
-      return activityList;
-    });
+      // 检查是否存在更新，并且更新时间是否在发布时间6小时之后
+      if (updated) {
+        const updateDate = new Date(updated);
+        if (updateDate > publishDate && (updateDate.getTime() - publishDate.getTime()) > sixHoursInMs) {
+          // 如果是重要更新，则将动态类型设置为“更新”
+          activityType = 'update';
+          effectiveDate = updateDate;
+        }
+      }
+      // 如果更新在6小时内，则忽略更新，动态类型保持为“发布”
+
+      return {
+        type: activityType,
+        date: effectiveDate,
+        title,
+        permalink: permalink.replace(/^/, "/"),
+        author
+      };
+    }).filter(activity => activity !== null); // 过滤掉没有日期的无效动态
+    // --- 主要修改区域结束 ---
 
     // 排序和筛选
     const sorted = activities
@@ -85,6 +94,7 @@ document.addEventListener('DOMContentLoaded', async function () {
       const isUpdate = type === 'update';
       const icon = isUpdate ? 'edit' : 'pencil-alt';
       const action = isUpdate ? '更新了文章' : '发布了文章';
+      // 注意：这里可以根据需要选择使用 UTC 时间或本地时间
       const formattedDate = `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
 
       container.insertAdjacentHTML('beforeend', `
@@ -108,6 +118,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 </script>
 
 <style>
+/* 样式部分保持不变 */
 #site-activities {
   max-width: 800px;
   margin: 2em auto;
