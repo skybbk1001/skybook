@@ -589,40 +589,17 @@
 }
 .post p .warning-banner {
   display: block;
+  color: #ff542d;
   font-size: 24px;
   text-indent: 0;
   text-align: center;
   margin: 2em 0 1.5em 0;
 }
-@media (prefers-color-scheme: light) {
-  .post p .warning-banner {
-    color: #ff542d;
-  }
+.post p .warning-banner a {
+  color: #cdcdcd;
 }
-@media (prefers-color-scheme: dark) {
-  .post p .warning-banner {
-    color: #ffcf76;
-  }
-}
-@media (prefers-color-scheme: light) {
-  .post p .warning-banner a {
-    color: #333;
-  }
-}
-@media (prefers-color-scheme: dark) {
-  .post p .warning-banner a {
-    color: #cdcdcd;
-  }
-}
-@media (prefers-color-scheme: light) {
-  .post p .warning-banner a:hover {
-    color: #ff542d;
-  }
-}
-@media (prefers-color-scheme: dark) {
-  .post p .warning-banner a:hover {
-    color: #ffcf76;
-  }
+.post p .warning-banner a:hover {
+  color: #ff542d;
 }
 .post .text-left {
   text-align: left;

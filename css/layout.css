@@ -25,11 +25,7 @@ img {
   height: auto;
   display: inline-block;
   vertical-align: middle;
-}
-@media (prefers-color-scheme: dark) {
-  img {
-    filter: brightness(0.8);
-  }
+  filter: brightness(0.8);
 }
 del,
 s {
