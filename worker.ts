@@ -669,72 +669,72 @@ async function executeAllHangupTasks(env: Env, ctx: ExecutionContext) {
         const allKeys = await env.KV_BINDING.list({ prefix: 'stv_config:' });
         console.log(`找到 ${allKeys.keys.length} 个配置`);
 
-        let executedCount = 0;
-
         for (const key of allKeys.keys) {
             try {
                 const configData = await env.KV_BINDING.get(key.name);
                 if (!configData) continue;
 
-                const     const originalIsActive = config.isActive;
-    const originalLastResult = config.lastResult;
+                const config: UserConfig = JSON.parse(configData);
+                
+                // 跳过非活跃配置
+                if (!config.isActive) {
+                    console.log(`⏭️ 跳过非活跃配置: ${config.configName}`);
+                    continue;
+                }
 
-    try {
-        console.log(`🚀 开始执行挂机请求: ${config.configName} (${config.stvUID})`);
-        const response = await fetch(`https://sangtacviet.app/io/user/online?ngmar=ol2&u=${config.stvUID}`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Cookie": config.cookie,
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Referer": "https://sangtacviet.app/",
-                "Origin": "https://sangtacviet.app",
-                "X-Requested-With": "XMLHttpRequest"
-            },
-            body: "sajax=online&ngmar=ol"
-        });
+                const originalIsActive = config.isActive;
+                const originalLastResult = config.lastResult;
 
-        const result = await response.text();
-        const success = response.ok && /^\d+$/.test(result.trim());
+                try {
+                    console.log(`🚀 开始执行挂机请求: ${config.configName} (${config.stvUID})`);
+                    const response = await fetch(`https://sangtacviet.app/io/user/online?ngmar=ol2&u=${config.stvUID}`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/x-www-form-urlencoded",
+                            "Cookie": config.cookie,
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                            "Referer": "https://sangtacviet.app/",
+                            "Origin": "https://sangtacviet.app",
+                            "X-Requested-With": "XMLHttpRequest"
+                        },
+                        body: "sajax=online&ngmar=ol"
+                    });
 
-        config.lastExecuted = new Date().toISOString();
-        config.executionCount = (config.executionCount || 0) + 1;
+                    const result = await response.text();
+                    const success = response.ok && /^\d+$/.test(result.trim());
 
-        if (success) {
-            config.lastResult = "✅ 成功";
-            console.log(`📊 挂机请求成功: ${config.configName}`);
-        } else {
-            config.lastResult = `❌ 失败: ${result.substring(0, 100)}`;
-            config.isActive = false; // 🚨 失败时自动禁用配置
-            console.warn(`⚠️ 挂机请求失败，已禁用配置: ${config.configName}`);
+                    config.lastExecuted = new Date().toISOString();
+                    config.executionCount = (config.executionCount || 0) + 1;
+
+                    if (success) {
+                        config.lastResult = "✅ 成功";
+                        console.log(`📊 挂机请求成功: ${config.configName}`);
+                    } else {
+                        config.lastResult = `❌ 失败: ${result.substring(0, 100)}`;
+                        config.isActive = false; // 🚨 失败时自动禁用配置
+                        console.warn(`⚠️ 挂机请求失败，已禁用配置: ${config.configName}`);
+                    }
+                } catch (error) {
+                    const errorMsg = error instanceof Error ? error.message : "Unknown error";
+                    config.lastExecuted = new Date().toISOString();
+                    config.lastResult = `❌ 错误: ${errorMsg}`;
+                    config.isActive = false; // 🚨 异常时也禁用配置
+                    config.executionCount = (config.executionCount || 0) + 1;
+                    console.error(`💥 挂机请求异常，已禁用配置: ${config.configName} - ${errorMsg}`);
+                }
+
+                // Only write to KV if the active status or the result message has changed.
+                // This avoids writing on every successful run, reducing KV writes significantly.
+                if (config.isActive !== originalIsActive || config.lastResult !== originalLastResult) {
+                    await env.KV_BINDING.put(`stv_config:${config.userId}:${config.configId}`, JSON.stringify(config));
+                }
+            } catch (error) {
+                console.error(`处理配置时发生错误:`, error);
+            }
         }
+        console.log('=== 所有挂机任务执行完毕 ===');
     } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : "Unknown error";
-        config.lastExecuted = new Date().toISOString();
-        config.lastResult = `❌ 错误: ${errorMsg}`;
-        config.isActive = false; // 🚨 异常时也禁用配置
-        config.executionCount = (config.executionCount || 0) + 1;
-        console.error(`💥 挂机请求异常，已禁用配置: ${config.configName} - ${errorMsg}`);
-    }
-
-    // Only write to KV if the active status or the result message has changed.
-    // This avoids writing on every successful run, reducing KV writes significantly.
-    if (config.isActive !== originalIsActive || config.lastResult !== originalLastResult) {
-     } else {
-            config.lastResult = `❌ 失败: ${result.substring(0, 100)}`;
-            config.isActive = false; // 🚨 失败时自动禁用配置
-            console.warn(`⚠️ 挂机请求失败，已禁用配置: ${config.configName}`);
-        }
-
-        await env.KV_BINDING.put(`stv_config:${config.userId}:${config.configId}`, JSON.stringify(config));
-    } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : "Unknown error";
-        config.lastExecuted = new Date().toISOString();
-        config.lastResult = `❌ 错误: ${errorMsg}`;
-        config.isActive = false; // 🚨 异常时也禁用配置
-        config.executionCount = (config.executionCount || 0) + 1;
-        console.error(`💥 挂机请求异常，已禁用配置: ${config.configName} - ${errorMsg}`);
-        await env.KV_BINDING.put(`stv_config:${config.userId}:${config.configId}`, JSON.stringify(config));
+        console.error('执行挂机任务时发生错误:', error);
     }
 }
 
