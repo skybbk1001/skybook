@@ -60,26 +60,55 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
             });
         }
 
-        // 保存新配置
+        // 保存新配置或更新现有配置
         if (url.pathname === '/api/hangup/configs' && request.method === 'POST') {
-            const body = await request.json() as UserConfig;
+            let body: any;
+            try {
+                body = await request.json();
+            } catch (e) {
+                return createErrorResponse('无效的JSON格式', 400);
+            }
 
-            const configId = generateConfigId();
+            // 验证必需字段
+            if (!isValidUserConfig(body)) {
+                return createErrorResponse('缺少必需字段或字段格式不正确', 400);
+            }
 
-            const config: UserConfig = {
-                ...body,
-                configId,
-                isActive: true,
-                createdAt: new Date().toISOString(),
-                executionCount: 0
-            };
+            // 查找具有相同 stvUID 的现有配置
+            const existingConfigResult = await findConfigByStvUID(body.userId, body.stvUID, env);
+            const existingConfig = existingConfigResult.config;
+            const existingConfigId = existingConfigResult.configId;
+
+            let config: UserConfig;
+            let configId: string;
+
+            if (existingConfig && existingConfigId) {
+                // 更新现有配置
+                config = {
+                    ...existingConfig,
+                    configName: body.configName,
+                    cookie: body.cookie,
+                    isActive: true, // 重新激活配置
+                };
+                configId = existingConfigId;
+            } else {
+                // 创建新配置
+                configId = generateConfigId();
+                config = {
+                    ...body,
+                    configId,
+                    isActive: true,
+                    createdAt: new Date().toISOString(),
+                    executionCount: 0
+                };
+            }
 
             await env.KV_BINDING.put(`stv_config:${body.userId}:${configId}`, JSON.stringify(config));
 
             return new Response(JSON.stringify({
                 success: true,
                 configId,
-                message: '配置保存成功'
+                message: existingConfig ? '配置更新成功' : '配置保存成功'
             }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
@@ -90,10 +119,7 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
             const userId = url.searchParams.get('userId');
 
             if (!userId) {
-                return new Response(JSON.stringify({ error: '缺少用户ID' }), {
-                    status: 400,
-                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                });
+                return createErrorResponse('缺少用户ID', 400);
             }
 
             const configs = await getUserConfigs(userId, env);
@@ -105,7 +131,16 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
         // 删除配置
         if (url.pathname.startsWith('/api/hangup/configs/') && request.method === 'DELETE') {
             const configId = url.pathname.split('/').pop();
-            const body = await request.json() as { userId: string };
+            let body: any;
+            try {
+                body = await request.json();
+            } catch (e) {
+                return createErrorResponse('无效的JSON格式', 400);
+            }
+
+            if (!body.userId) {
+                return createErrorResponse('缺少用户ID', 400);
+            }
 
             await env.KV_BINDING.delete(`stv_config:${body.userId}:${configId}`);
             return new Response(JSON.stringify({ success: true }), {
@@ -117,7 +152,16 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
         if (url.pathname.startsWith('/api/hangup/configs/') && url.pathname.endsWith('/toggle') && request.method === 'POST') {
             const pathParts = url.pathname.split('/');
             const configId = pathParts[pathParts.length - 2];
-            const body = await request.json() as { userId: string };
+            let body: any;
+            try {
+                body = await request.json();
+            } catch (e) {
+                return createErrorResponse('无效的JSON格式', 400);
+            }
+
+            if (!body.userId) {
+                return createErrorResponse('缺少用户ID', 400);
+            }
 
             const configKey = `stv_config:${body.userId}:${configId}`;
             const configData = await env.KV_BINDING.get(configKey);
@@ -133,26 +177,14 @@ async function handleApiRequest(request: Request, url: URL, env: Env): Promise<R
                 });
             }
 
-            return new Response(JSON.stringify({ error: '配置不存在' }), {
-                status: 404,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            });
+            return createErrorResponse('配置不存在', 404);
         }
 
-        return new Response(JSON.stringify({ error: 'Not Found' }), {
-            status: 404,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+        return createErrorResponse('Not Found', 404);
 
     } catch (error) {
         console.error('API Error:', error);
-        return new Response(JSON.stringify({
-            error: 'Internal Server Error',
-            details: error instanceof Error ? error.message : 'Unknown error'
-        }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+        return createErrorResponse('Internal Server Error', 500);
     }
 }
 
@@ -670,71 +702,87 @@ async function executeAllHangupTasks(env: Env, ctx: ExecutionContext) {
         console.log(`找到 ${allKeys.keys.length} 个配置`);
 
         for (const key of allKeys.keys) {
-            try {
-                const configData = await env.KV_BINDING.get(key.name);
-                if (!configData) continue;
-
-                const config: UserConfig = JSON.parse(configData);
-                
-                // 跳过非活跃配置
-                if (!config.isActive) {
-                    console.log(`⏭️ 跳过非活跃配置: ${config.configName}`);
-                    continue;
-                }
-
-                const originalIsActive = config.isActive;
-                const originalLastResult = config.lastResult;
-
-                try {
-                    console.log(`🚀 开始执行挂机请求: ${config.configName} (${config.stvUID})`);
-                    const response = await fetch(`https://sangtacviet.app/io/user/online?ngmar=ol2&u=${config.stvUID}`, {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/x-www-form-urlencoded",
-                            "Cookie": config.cookie,
-                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                            "Referer": "https://sangtacviet.app/",
-                            "Origin": "https://sangtacviet.app",
-                            "X-Requested-With": "XMLHttpRequest"
-                        },
-                        body: "sajax=online&ngmar=ol"
-                    });
-
-                    const result = await response.text();
-                    const success = response.ok && /^\d+$/.test(result.trim());
-
-                    config.lastExecuted = new Date().toISOString();
-                    config.executionCount = (config.executionCount || 0) + 1;
-
-                    if (success) {
-                        config.lastResult = "✅ 成功";
-                        console.log(`📊 挂机请求成功: ${config.configName}`);
-                    } else {
-                        config.lastResult = `❌ 失败: ${result.substring(0, 100)}`;
-                        config.isActive = false; // 🚨 失败时自动禁用配置
-                        console.warn(`⚠️ 挂机请求失败，已禁用配置: ${config.configName}`);
-                    }
-                } catch (error) {
-                    const errorMsg = error instanceof Error ? error.message : "Unknown error";
-                    config.lastExecuted = new Date().toISOString();
-                    config.lastResult = `❌ 错误: ${errorMsg}`;
-                    config.isActive = false; // 🚨 异常时也禁用配置
-                    config.executionCount = (config.executionCount || 0) + 1;
-                    console.error(`💥 挂机请求异常，已禁用配置: ${config.configName} - ${errorMsg}`);
-                }
-
-                // Only write to KV if the active status or the result message has changed.
-                // This avoids writing on every successful run, reducing KV writes significantly.
-                if (config.isActive !== originalIsActive || config.lastResult !== originalLastResult) {
-                    await env.KV_BINDING.put(`stv_config:${config.userId}:${config.configId}`, JSON.stringify(config));
-                }
-            } catch (error) {
-                console.error(`处理配置时发生错误:`, error);
-            }
+            await processHangupTask(key.name, env);
         }
         console.log('=== 所有挂机任务执行完毕 ===');
     } catch (error) {
         console.error('执行挂机任务时发生错误:', error);
+    }
+}
+
+async function processHangupTask(configKey: string, env: Env) {
+    try {
+        const configData = await env.KV_BINDING.get(configKey);
+        if (!configData) return;
+
+        const config: UserConfig = JSON.parse(configData);
+        
+        // 跳过非活跃配置
+        if (!config.isActive) {
+            console.log(`⏭️ 跳过非活跃配置: ${config.configName}`);
+            return;
+        }
+
+        const originalIsActive = config.isActive;
+        const originalLastResult = config.lastResult;
+
+        // 执行挂机请求
+        const result = await executeHangupRequest(config);
+
+        // 更新配置状态
+        updateConfigStatus(config, result);
+
+        // Only write to KV if the active status or the result message has changed.
+        // This avoids writing on every successful run, reducing KV writes significantly.
+        if (config.isActive !== originalIsActive || config.lastResult !== originalLastResult) {
+            await env.KV_BINDING.put(`stv_config:${config.userId}:${config.configId}`, JSON.stringify(config));
+        }
+    } catch (error) {
+        console.error(`处理配置时发生错误:`, error);
+    }
+}
+
+async function executeHangupRequest(config: UserConfig): Promise<{ success: boolean; message: string }> {
+    try {
+        console.log(`🚀 开始执行挂机请求: ${config.configName} (${config.stvUID})`);
+        const response = await fetch(`https://sangtacviet.app/io/user/online?ngmar=ol2&u=${config.stvUID}`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Cookie": config.cookie,
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Referer": "https://sangtacviet.app/",
+                "Origin": "https://sangtacviet.app",
+                "X-Requested-With": "XMLHttpRequest"
+            },
+            body: "sajax=online&ngmar=ol"
+        });
+
+        const result = await response.text();
+        const success = response.ok && /^\d+$/.test(result.trim());
+
+        if (success) {
+            console.log(`📊 挂机请求成功: ${config.configName}`);
+            return { success: true, message: "✅ 成功" };
+        } else {
+            console.warn(`⚠️ 挂机请求失败，已禁用配置: ${config.configName}`);
+            return { success: false, message: `❌ 失败: ${result.substring(0, 100)}` };
+        }
+    } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : "Unknown error";
+        console.error(`💥 挂机请求异常，已禁用配置: ${config.configName} - ${errorMsg}`);
+        return { success: false, message: `❌ 错误: ${errorMsg}` };
+    }
+}
+
+function updateConfigStatus(config: UserConfig, result: { success: boolean; message: string }) {
+    config.lastExecuted = new Date().toISOString();
+    config.executionCount = (config.executionCount || 0) + 1;
+    config.lastResult = result.message;
+
+    // 如果请求失败，禁用配置
+    if (!result.success) {
+        config.isActive = false;
     }
 }
 
@@ -760,4 +808,48 @@ async function getUserConfigs(userId: string, env: Env): Promise<UserConfig[]> {
 
 function generateConfigId(): string {
     return 'cfg_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 15);
+}
+
+// 根据 stvUID 查找配置
+async function findConfigByStvUID(userId: string, stvUID: string, env: Env): Promise<{ config: UserConfig | null, configId: string | null }> {
+    const allKeys = await env.KV_BINDING.list({ prefix: `stv_config:${userId}:` });
+    for (const key of allKeys.keys) {
+        const configData = await env.KV_BINDING.get(key.name);
+        if (configData) {
+            const config: UserConfig = JSON.parse(configData);
+            if (config.stvUID === stvUID) {
+                return { config, configId: config.configId };
+            }
+        }
+    }
+    return { config: null, configId: null };
+}
+
+// 验证 UserConfig 对象
+function isValidUserConfig(config: any): config is UserConfig {
+    return (
+        typeof config === 'object' &&
+        typeof config.userId === 'string' &&
+        typeof config.stvUID === 'string' &&
+        typeof config.configName === 'string' &&
+        typeof config.cookie === 'string' &&
+        config.userId.length > 0 &&
+        config.stvUID.length > 0 &&
+        config.configName.length > 0 &&
+        config.cookie.length > 0
+    );
+}
+
+// 创建统一的错误响应
+function createErrorResponse(message: string, status: number = 400): Response {
+    const corsHeaders = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+    };
+    
+    return new Response(JSON.stringify({ success: false, error: message }), {
+        status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
 }
