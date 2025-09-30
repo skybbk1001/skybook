@@ -705,6 +705,44 @@ async function executeAllHangupTasks(env: Env, ctx: ExecutionContext) {
             await processHangupTask(key.name, env);
         }
         console.log('=== 所有挂机任务执行完毕 ===');
+
+        // 检查是否应该发送每日通知
+        if (await shouldSendDailyNotification(env)) {
+            // 获取所有配置的执行状态
+            const configs = await getAllConfigs(env);
+            
+            // 生成通知内容
+            const title = 'STV 自动挂机任务执行报告';
+            let content = `<h2>STV 自动挂机任务执行报告</h2>`;
+            content += `<p>执行时间: ${new Date().toLocaleString()}</p>`;
+            content += `<p>总配置数: ${configs.length}</p>`;
+            
+            // 统计活跃配置和执行结果
+            const activeConfigs = configs.filter(config => config.isActive);
+            const successConfigs = configs.filter(config => config.lastResult && config.lastResult.includes('成功'));
+            const failedConfigs = configs.filter(config => config.lastResult && (config.lastResult.includes('失败') || config.lastResult.includes('错误')));
+            
+            content += `<p>活跃配置数: ${activeConfigs.length}</p>`;
+            content += `<p>执行成功数: ${successConfigs.length}</p>`;
+            content += `<p>执行失败数: ${failedConfigs.length}</p>`;
+            
+            // 详细列出每个配置的执行情况
+            content += `<h3>详细执行情况:</h3>`;
+            content += `<ul>`;
+            for (const config of configs) {
+                const status = config.isActive ? '🟢 运行中' : '🔴 已停止';
+                const result = config.lastResult || '无';
+                const lastExecuted = config.lastExecuted ? new Date(config.lastExecuted).toLocaleString() : '未执行';
+                content += `<li>${config.configName} (${config.stvUID}): ${status} - ${result} (上次执行: ${lastExecuted})</li>`;
+            }
+            content += `</ul>`;
+            
+            // 发送通知
+            await sendPushPlusNotification(env, title, content);
+            
+            // 记录通知发送时间
+            await recordNotificationTime(env);
+        }
     } catch (error) {
         console.error('执行挂机任务时发生错误:', error);
     }
@@ -725,6 +763,7 @@ async function processHangupTask(configKey: string, env: Env) {
 
         const originalIsActive = config.isActive;
         const originalLastResult = config.lastResult;
+        const originalLastExecuted = config.lastExecuted;
 
         // 执行挂机请求
         const result = await executeHangupRequest(config);
@@ -732,9 +771,18 @@ async function processHangupTask(configKey: string, env: Env) {
         // 更新配置状态
         updateConfigStatus(config, result);
 
-        // Only write to KV if the active status or the result message has changed.
-        // This avoids writing on every successful run, reducing KV writes significantly.
-        if (config.isActive !== originalIsActive || config.lastResult !== originalLastResult) {
+        // 检查是否需要更新 KV 存储
+        const shouldUpdateKV = (
+            // 当活跃状态或结果消息发生变化时
+            config.isActive !== originalIsActive || 
+            config.lastResult !== originalLastResult ||
+            // 或者距离上次更新超过1小时时
+            (originalLastExecuted && 
+             (new Date().getTime() - new Date(originalLastExecuted).getTime()) > 60 * 60 * 1000)
+        );
+
+        // 如果需要更新，则写入 KV 存储
+        if (shouldUpdateKV) {
             await env.KV_BINDING.put(`stv_config:${config.userId}:${config.configId}`, JSON.stringify(config));
         }
     } catch (error) {
@@ -806,6 +854,27 @@ async function getUserConfigs(userId: string, env: Env): Promise<UserConfig[]> {
     return configs;
 }
 
+// 获取所有用户的配置
+async function getAllConfigs(env: Env): Promise<UserConfig[]> {
+    const configs: UserConfig[] = [];
+    const allKeys = await env.KV_BINDING.list({ prefix: 'stv_config:' });
+
+    for (const key of allKeys.keys) {
+        try {
+            const configData = await env.KV_BINDING.get(key.name);
+            if (configData) {
+                const config: UserConfig = JSON.parse(configData);
+                delete (config as any).cookie;
+                configs.push(config);
+            }
+        } catch (error) {
+            console.error(`Error loading config ${key.name}:`, error);
+        }
+    }
+
+    return configs;
+}
+
 function generateConfigId(): string {
     return 'cfg_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 15);
 }
@@ -852,4 +921,46 @@ function createErrorResponse(message: string, status: number = 400): Response {
         status,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
+}
+
+// 发送 PushPlus 通知
+async function sendPushPlusNotification(env: Env, title: string, content: string): Promise<void> {
+    // 使用固定编码的 PushPlus token
+    const PUSHPLUS_TOKEN = '197817faff36494da3cf79c3ec9c4fba';
+
+    try {
+        const url = `https://www.pushplus.plus/send?token=${PUSHPLUS_TOKEN}&title=${encodeURIComponent(title)}&content=${encodeURIComponent(content)}&template=html`;
+        const response = await fetch(url, { method: 'GET' });
+        
+        if (!response.ok) {
+            console.error(`PushPlus 通知发送失败: ${response.status} ${response.statusText}`);
+        } else {
+            console.log('PushPlus 通知发送成功');
+        }
+    } catch (error) {
+        console.error('PushPlus 通知发送异常:', error);
+    }
+}
+
+// 检查是否应该发送每日通知
+async function shouldSendDailyNotification(env: Env): Promise<boolean> {
+    const lastNotificationKey = 'last_pushplus_notification';
+    const lastNotification = await env.KV_BINDING.get(lastNotificationKey);
+    
+    if (!lastNotification) {
+        // 如果没有记录上次通知时间，则应该发送通知
+        return true;
+    }
+    
+    const lastNotificationTime = new Date(lastNotification).getTime();
+    const now = new Date().getTime();
+    
+    // 如果距离上次通知超过24小时，则应该发送通知
+    return (now - lastNotificationTime) > 24 * 60 * 60 * 1000;
+}
+
+// 记录通知发送时间
+async function recordNotificationTime(env: Env): Promise<void> {
+    const lastNotificationKey = 'last_pushplus_notification';
+    await env.KV_BINDING.put(lastNotificationKey, new Date().toISOString());
 }
