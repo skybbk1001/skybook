@@ -469,7 +469,7 @@ async function serveHangupPage(env: Env): Promise<Response> {
 
         <div id="configSection" class="hidden">
             <div class="card">
-                <h2>添加新配置</h2>
+                <h2>添加/编辑配置</h2>
                 <form id="configForm">
                     <div class="form-group">
                         <label for="configName">配置名称</label>
@@ -484,6 +484,7 @@ async function serveHangupPage(env: Env): Promise<Response> {
                         <textarea id="cookie" class="form-control" rows="4" placeholder="请粘贴完整的 Cookie 内容" required></textarea>
                     </div>
                     <button type="submit" class="btn btn-success">保存配置</button>
+                    <button type="button" class="btn btn-secondary" onclick="clearForm()">清空</button>
                 </form>
                 <div id="configMessage"></div>
             </div>
@@ -504,47 +505,7 @@ async function serveHangupPage(env: Env): Promise<Response> {
 
         document.addEventListener('DOMContentLoaded', function() {
             const configForm = document.getElementById('configForm');
-            configForm.addEventListener('submit', async function(event) {
-                event.preventDefault();
-                
-                if (!currentUserId) {
-                    showMessage('configMessage', '请先设置用户名', 'error');
-                    return;
-                }
-
-                const formData = {
-                    userId: currentUserId,
-                    configName: document.getElementById('configName').value.trim(),
-                    stvUID: document.getElementById('stvUID').value.trim(),
-                    cookie: document.getElementById('cookie').value.trim()
-                };
-
-                if (!formData.configName || !formData.stvUID || !formData.cookie) {
-                    showMessage('configMessage', '请填写所有字段', 'error');
-                    return;
-                }
-
-                try {
-                    const response = await fetch('/api/hangup/configs', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(formData)
-                    });
-                    
-                    const result = await response.json();
-                    
-                    if (result.success) {
-                        showMessage('configMessage', '配置保存成功！', 'success');
-                        configForm.reset();
-                        loadConfigs();
-                    } else {
-                        showMessage('configMessage', '保存失败: ' + (result.error || '未知错误'), 'error');
-                    }
-                } catch (error) {
-                    console.error('Save error:', error);
-                    showMessage('configMessage', '保存过程中发生错误', 'error');
-                }
-            });
+            configForm.onsubmit = submitConfigForm;
         });
 
         function setUser() {
@@ -561,7 +522,14 @@ async function serveHangupPage(env: Env): Promise<Response> {
         }
 
         async function manualExecute() {
+            const executeBtn = document.querySelector('.btn-warning');
+            const originalText = executeBtn.textContent;
+            
             try {
+                // 显示加载状态
+                executeBtn.textContent = '执行中...';
+                executeBtn.disabled = true;
+                
                 const response = await fetch('/api/hangup/execute', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
@@ -569,20 +537,35 @@ async function serveHangupPage(env: Env): Promise<Response> {
                 
                 const result = await response.json();
                 if (result.success) {
-                    alert('手动执行完成，请刷新配置列表查看结果');
+                    showMessage('configMessage', '手动执行完成，请刷新配置列表查看结果', 'success');
                     loadConfigs();
+                } else {
+                    showMessage('configMessage', '手动执行失败: ' + (result.error || '未知错误'), 'error');
                 }
             } catch (error) {
                 console.error('Manual execute error:', error);
-                alert('手动执行失败');
+                showMessage('configMessage', '手动执行过程中发生错误', 'error');
+            } finally {
+                // 恢复按钮状态
+                executeBtn.textContent = originalText;
+                executeBtn.disabled = false;
             }
         }
 
         async function loadConfigs() {
             if (!currentUserId) return;
+            
+            const configsList = document.getElementById('configsList');
+            const refreshBtn = document.querySelector('.btn-info');
+            const originalText = refreshBtn.textContent;
 
             try {
-                const response = await fetch(\`/api/hangup/configs?userId=\${currentUserId}\`);
+                // 显示加载状态
+                refreshBtn.textContent = '加载中...';
+                refreshBtn.disabled = true;
+                configsList.innerHTML = '<div class="empty-state"><p>加载配置中...</p></div>';
+
+                const response = await fetch(`/api/hangup/configs?userId=${currentUserId}`);
                 const result = await response.json();
                 
                 if (result.configs) {
@@ -590,63 +573,69 @@ async function serveHangupPage(env: Env): Promise<Response> {
                 }
             } catch (error) {
                 console.error('Load configs error:', error);
+                configsList.innerHTML = '<div class="empty-state"><p>加载配置时发生错误</p></div>';
+            } finally {
+                // 恢复按钮状态
+                refreshBtn.textContent = '刷新列表';
+                refreshBtn.disabled = false;
             }
         }
 
         function displayConfigs(configs) {
             const container = document.getElementById('configsList');
             if (configs.length === 0) {
-                container.innerHTML = \`
+                container.innerHTML = `
                     <div class="empty-state">
                         <h3>暂无配置</h3>
                         <p>点击上方"添加新配置"开始创建您的第一个配置</p>
                     </div>
-                \`;
+                `;
                 return;
             }
 
-            container.innerHTML = \`
+            container.innerHTML = `
                 <div class="config-grid">
-                    \${configs.map(config => \`
+                    ${configs.map(config => `
                         <div class="config-item">
                             <div class="config-header">
-                                <div class="config-title">\${config.configName}</div>
-                                <div class="status \${config.isActive ? 'status-active' : 'status-inactive'}">
-                                    \${config.isActive ? '运行中' : '已停止'}
+                                <div class="config-title">${config.configName}</div>
+                                <div class="status ${config.isActive ? 'status-active' : 'status-inactive'}">
+                                    ${config.isActive ? '运行中' : '已停止'}
                                 </div>
                             </div>
                             <div class="config-info">
                                 <div class="config-info-item">
-                                    <strong>STV ID:</strong> \${config.stvUID}
+                                    <strong>STV ID:</strong> ${config.stvUID}
                                 </div>
                                 <div class="config-info-item">
-                                    <strong>执行次数:</strong> \${config.executionCount || 0} 次
+                                    <strong>执行次数:</strong> ${config.executionCount || 0} 次
                                 </div>
                                 <div class="config-info-item">
-                                    <strong>上次执行:</strong> \${config.lastExecuted ? new Date(config.lastExecuted).toLocaleString() : '未执行'}
+                                    <strong>上次执行:</strong> ${config.lastExecuted ? new Date(config.lastExecuted).toLocaleString() : '未执行'}
                                 </div>
                                 <div class="config-info-item">
-                                    <strong>执行结果:</strong> \${config.lastResult || '无'}
+                                    <strong>执行结果:</strong> ${config.lastResult || '无'}
                                 </div>
                                 <div class="config-info-item">
-                                    <strong>创建时间:</strong> \${new Date(config.createdAt).toLocaleString()}
+                                    <strong>创建时间:</strong> ${new Date(config.createdAt).toLocaleString()}
                                 </div>
                             </div>
                             <div class="config-actions">
-                                <button class="btn \${config.isActive ? 'btn-danger' : 'btn-success'}" onclick="toggleConfig('\${config.configId}')">
-                                    \${config.isActive ? '停止' : '启动'}
+                                <button class="btn ${config.isActive ? 'btn-danger' : 'btn-success'}" onclick="toggleConfig('${config.configId}')">
+                                    ${config.isActive ? '停止' : '启动'}
                                 </button>
-                                <button class="btn btn-danger" onclick="deleteConfig('\${config.configId}')">删除</button>
+                                <button class="btn btn-primary" onclick="editConfig('${config.configId}')">编辑</button>
+                                <button class="btn btn-danger" onclick="deleteConfig('${config.configId}')">删除</button>
                             </div>
                         </div>
-                    \`).join('')}
+                    `).join('')}
                 </div>
-            \`;
+            `;
         }
 
         async function toggleConfig(configId) {
             try {
-                const response = await fetch(\`/api/hangup/configs/\${configId}/toggle\`, {
+                const response = await fetch(`/api/hangup/configs/${configId}/toggle`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ userId: currentUserId })
@@ -655,9 +644,12 @@ async function serveHangupPage(env: Env): Promise<Response> {
                 const result = await response.json();
                 if (result.success) {
                     loadConfigs();
+                } else {
+                    showMessage('configMessage', '切换配置状态失败: ' + (result.error || '未知错误'), 'error');
                 }
             } catch (error) {
                 console.error('Toggle error:', error);
+                showMessage('configMessage', '切换配置状态时发生错误', 'error');
             }
         }
 
@@ -665,7 +657,7 @@ async function serveHangupPage(env: Env): Promise<Response> {
             if (!confirm('确定要删除这个配置吗？')) return;
 
             try {
-                const response = await fetch(\`/api/hangup/configs/\${configId}\`, {
+                const response = await fetch(`/api/hangup/configs/${configId}`, {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ userId: currentUserId })
@@ -674,9 +666,131 @@ async function serveHangupPage(env: Env): Promise<Response> {
                 const result = await response.json();
                 if (result.success) {
                     loadConfigs();
+                    showMessage('configMessage', '配置删除成功', 'success');
+                } else {
+                    showMessage('configMessage', '删除配置失败: ' + (result.error || '未知错误'), 'error');
                 }
             } catch (error) {
                 console.error('Delete error:', error);
+                showMessage('configMessage', '删除配置时发生错误', 'error');
+            }
+        }
+
+        async function editConfig(configId) {
+            try {
+                // 从服务器获取配置信息
+                const response = await fetch(`/api/hangup/configs?userId=${currentUserId}`);
+                const result = await response.json();
+                
+                if (result.configs) {
+                    // 找到要编辑的配置
+                    const config = result.configs.find(c => c.configId === configId);
+                    if (config) {
+                        // 填充表单字段
+                        document.getElementById('configName').value = config.configName;
+                        document.getElementById('stvUID').value = config.stvUID;
+                        document.getElementById('cookie').value = config.cookie;
+                        
+                        // 更改表单提交处理函数
+                        const configForm = document.getElementById('configForm');
+                        configForm.onsubmit = async function(event) {
+                            event.preventDefault();
+                            
+                            if (!currentUserId) {
+                                showMessage('configMessage', '请先设置用户名', 'error');
+                                return;
+                            }
+
+                            const formData = {
+                                userId: currentUserId,
+                                configId: configId,
+                                configName: document.getElementById('configName').value.trim(),
+                                stvUID: document.getElementById('stvUID').value.trim(),
+                                cookie: document.getElementById('cookie').value.trim()
+                            };
+
+                            if (!formData.configName || !formData.stvUID || !formData.cookie) {
+                                showMessage('configMessage', '请填写所有字段', 'error');
+                                return;
+                            }
+
+                            try {
+                                // 注意：这里需要后端支持更新配置的API
+                                // 目前我们仍然使用创建配置的API，但实际应该使用更新API
+                                const response = await fetch('/api/hangup/configs', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(formData)
+                                });
+                                
+                                const result = await response.json();
+                                
+                                if (result.success) {
+                                    showMessage('configMessage', '配置更新成功！', 'success');
+                                    configForm.reset();
+                                    loadConfigs();
+                                    // 恢复表单提交处理函数
+                                    configForm.onsubmit = submitConfigForm;
+                                } else {
+                                    showMessage('configMessage', '更新失败: ' + (result.error || '未知错误'), 'error');
+                                }
+                            } catch (error) {
+                                console.error('Update error:', error);
+                                showMessage('configMessage', '更新过程中发生错误', 'error');
+                            }
+                        };
+                        
+                        showMessage('configMessage', '已加载配置信息，请修改后点击保存配置按钮', 'success');
+                    } else {
+                        showMessage('configMessage', '未找到配置信息', 'error');
+                    }
+                }
+            } catch (error) {
+                console.error('Load config error:', error);
+                showMessage('configMessage', '加载配置信息时发生错误', 'error');
+            }
+        }
+
+        // 原始的表单提交处理函数
+        async function submitConfigForm(event) {
+            event.preventDefault();
+            
+            if (!currentUserId) {
+                showMessage('configMessage', '请先设置用户名', 'error');
+                return;
+            }
+
+            const formData = {
+                userId: currentUserId,
+                configName: document.getElementById('configName').value.trim(),
+                stvUID: document.getElementById('stvUID').value.trim(),
+                cookie: document.getElementById('cookie').value.trim()
+            };
+
+            if (!formData.configName || !formData.stvUID || !formData.cookie) {
+                showMessage('configMessage', '请填写所有字段', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/hangup/configs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage('configMessage', '配置保存成功！', 'success');
+                    document.getElementById('configForm').reset();
+                    loadConfigs();
+                } else {
+                    showMessage('configMessage', '保存失败: ' + (result.error || '未知错误'), 'error');
+                }
+            } catch (error) {
+                console.error('Save error:', error);
+                showMessage('configMessage', '保存过程中发生错误', 'error');
             }
         }
 
@@ -712,8 +826,8 @@ async function executeAllHangupTasks(env: Env, ctx: ExecutionContext) {
             const configs = await getAllConfigs(env);
             
             // 生成通知内容
-            const title = 'STV 自动挂机报告';
-            let content = `<h2>STV 自动挂机报告</h2>`;
+            const title = 'STV 自动挂机任务执行报告';
+            let content = `<h2>STV 自动挂机任务执行报告</h2>`;
             content += `<p>执行时间: ${new Date().toLocaleString()}</p>`;
             content += `<p>总配置数: ${configs.length}</p>`;
             
@@ -963,4 +1077,12 @@ async function shouldSendDailyNotification(env: Env): Promise<boolean> {
 async function recordNotificationTime(env: Env): Promise<void> {
     const lastNotificationKey = 'last_pushplus_notification';
     await env.KV_BINDING.put(lastNotificationKey, new Date().toISOString());
+}
+
+function clearForm() {
+    document.getElementById('configForm').reset();
+    // 恢复表单提交处理函数
+    const configForm = document.getElementById('configForm');
+    configForm.onsubmit = submitConfigForm;
+    showMessage('configMessage', '表单已清空', 'success');
 }
