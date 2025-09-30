@@ -712,8 +712,8 @@ async function executeAllHangupTasks(env: Env, ctx: ExecutionContext) {
             const configs = await getAllConfigs(env);
             
             // 生成通知内容
-            const title = 'STV 自动挂机任务执行报告';
-            let content = `<h2>STV 自动挂机任务执行报告</h2>`;
+            const title = 'STV 自动挂机报告';
+            let content = `<h2>STV 自动挂机报告</h2>`;
             content += `<p>执行时间: ${new Date().toLocaleString()}</p>`;
             content += `<p>总配置数: ${configs.length}</p>`;
             
