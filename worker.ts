@@ -626,13 +626,13 @@ async function serveHangupPage(env: Env): Promise<Response> {
                                     <strong>执行次数:</strong> \${config.executionCount !== undefined ? config.executionCount : 0} 次
                                 </div>
                                 <div class="config-info-item">
-                                    <strong>上次执行:</strong> \${config.lastExecuted ? new Date(config.lastExecuted as string).toLocaleString() : '未执行'}
+                                    <strong>上次执行:</strong> \${config.lastExecuted ? new Date(config.lastExecuted).toLocaleString() : '未执行'}
                                 </div>
                                 <div class="config-info-item">
                                     <strong>执行结果:</strong> \${config.lastResult !== undefined ? config.lastResult : '无'}
                                 </div>
                                 <div class="config-info-item">
-                                    <strong>创建时间:</strong> \${new Date(config.createdAt as string).toLocaleString()}
+                                    <strong>创建时间:</strong> \${new Date(config.createdAt).toLocaleString()}
                                 </div>
                             </div>
                             <div class="config-actions">
