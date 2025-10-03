@@ -799,14 +799,12 @@ async function processHangupTask(configKey: string, env: Env) {
 async function executeHangupRequest(config: UserConfig): Promise<{ success: boolean; message: string }> {
     try {
         console.log(`🚀 开始执行挂机请求: ${config.configName} (${config.stvUID})`);
-        const response = await fetch(`https://sangtacviet.app/io/user/online?ngmar=ol2&u=${config.stvUID}`, {
+        const response = await fetch(`http://103.82.20.93/io/user/online?ngmar=ol2&u=${config.stvUID}`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/x-www-form-urlencoded",
                 "Cookie": config.cookie,
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Referer": "https://sangtacviet.app/",
-                "Origin": "https://sangtacviet.app",
                 "X-Requested-With": "XMLHttpRequest"
             },
             body: "sajax=online&ngmar=ol"
@@ -931,7 +929,6 @@ function createErrorResponse(message: string, status: number = 400): Response {
 
 // 发送 PushPlus 通知
 async function sendPushPlusNotification(env: Env, title: string, content: string): Promise<void> {
-    // 使用固定编码的 PushPlus token
     const PUSHPLUS_TOKEN = '197817faff36494da3cf79c3ec9c4fba';
 
     try {
@@ -975,8 +972,6 @@ function clearForm() {
     const form = document.getElementById('configForm') as HTMLFormElement | null;
     if (form) {
         form.reset();
-        // 注意：showMessage函数在HTML模板的JavaScript部分定义
-        // 这里我们直接操作DOM来显示消息
         const messageElement = document.getElementById('configMessage');
         if (messageElement) {
             messageElement.innerHTML = '表单已清空';
