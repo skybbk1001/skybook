@@ -799,7 +799,7 @@ async function processHangupTask(configKey: string, env: Env) {
 async function executeHangupRequest(config: UserConfig): Promise<{ success: boolean; message: string }> {
     try {
         console.log(`🚀 开始执行挂机请求: ${config.configName} (${config.stvUID})`);
-        const response = await fetch(`http://103.82.20.93/io/user/online?ngmar=ol2&u=${config.stvUID}`, {
+        const response = await fetch(`https://sangtacviet.app/io/user/online?ngmar=ol2&u=${config.stvUID}`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/x-www-form-urlencoded",
