@@ -811,6 +811,7 @@ async function executeHangupRequest(config: UserConfig): Promise<{ success: bool
         });
 
         const result = await response.text();
+        const status = response.status;
         const success = ((status >= 200 && status < 400) || status === 522) 
                 && /^\d+$/.test(result.trim());
 
