@@ -1,5 +1,5 @@
 {
-  "name": "skybook-w",
+  "name": "sw",
   "compatibility_date": "2025-01-14",
   "main": "./worker.ts",
   "assets": {
