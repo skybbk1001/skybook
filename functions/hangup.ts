@@ -1,0 +1,989 @@
+// worker.ts
+interface Env {
+    ASSETS: Fetcher;
+    KV_BINDING: KVNamespace;
+}
+
+interface UserConfig {
+    configId: string;
+    userId: string;
+    configName: string;
+    stvUID: string;
+    cookie: string;
+    isActive: boolean;
+    lastExecuted?: string;
+    lastResult?: string;
+    createdAt: string;
+    executionCount?: number;
+}
+
+export default {
+    async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+        const url = new URL(request.url);
+
+        if (url.pathname.startsWith('/api/')) {
+            return handleApiRequest(request, url, env);
+        }
+
+        if (url.pathname === '/hangup' || url.pathname === '/hangup/') {
+            return serveHangupPage(env);
+        }
+
+        return env.ASSETS.fetch(request);
+    },
+
+    async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+        console.log('=== Cron 定时执行开始 ===', new Date().toISOString());
+        await executeAllHangupTasks(env, ctx);
+        console.log('=== Cron 定时执行结束 ===');
+    }
+};
+
+async function handleApiRequest(request: Request, url: URL, env: Env): Promise<Response> {
+    const corsHeaders = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+    };
+
+    if (request.method === 'OPTIONS') {
+        return new Response(null, { headers: corsHeaders });
+    }
+
+    try {
+        // 手动触发执行
+        if (url.pathname === '/api/hangup/execute' && request.method === 'POST') {
+            console.log('=== 手动执行开始 ===');
+            await executeAllHangupTasks(env, {} as ExecutionContext);
+            return new Response(JSON.stringify({ success: true, message: '手动执行完成' }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+        }
+
+        // 保存新配置或更新现有配置
+        if (url.pathname === '/api/hangup/configs' && request.method === 'POST') {
+            let body: any;
+            try {
+                body = await request.json();
+            } catch (e) {
+                return createErrorResponse('无效的JSON格式', 400);
+            }
+
+            // 验证必需字段
+            if (!isValidUserConfig(body)) {
+                return createErrorResponse('缺少必需字段或字段格式不正确', 400);
+            }
+
+            // 查找具有相同 stvUID 的现有配置
+            const existingConfigResult = await findConfigByStvUID(body.userId, body.stvUID, env);
+            const existingConfig = existingConfigResult.config;
+            const existingConfigId = existingConfigResult.configId;
+
+            let config: UserConfig;
+            let configId: string;
+
+            if (existingConfig && existingConfigId) {
+                // 更新现有配置
+                config = {
+                    ...existingConfig,
+                    configName: body.configName,
+                    cookie: body.cookie,
+                    isActive: true, // 重新激活配置
+                };
+                configId = existingConfigId;
+            } else {
+                // 创建新配置
+                configId = generateConfigId();
+                config = {
+                    ...body,
+                    configId,
+                    isActive: true,
+                    createdAt: new Date().toISOString(),
+                    executionCount: 0
+                };
+            }
+
+            await env.KV_BINDING.put(`stv_config:${body.userId}:${configId}`, JSON.stringify(config));
+
+            return new Response(JSON.stringify({
+                success: true,
+                configId,
+                message: existingConfig ? '配置更新成功' : '配置保存成功'
+            }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+        }
+
+        // 获取用户配置列表
+        if (url.pathname === '/api/hangup/configs' && request.method === 'GET') {
+            const userId = url.searchParams.get('userId');
+
+            if (!userId) {
+                return createErrorResponse('缺少用户ID', 400);
+            }
+
+            const configs = await getUserConfigs(userId, env);
+            return new Response(JSON.stringify({ configs }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+        }
+
+        // 删除配置
+        if (url.pathname.startsWith('/api/hangup/configs/') && request.method === 'DELETE') {
+            const configId = url.pathname.split('/').pop();
+            let body: any;
+            try {
+                body = await request.json();
+            } catch (e) {
+                return createErrorResponse('无效的JSON格式', 400);
+            }
+
+            if (!body.userId) {
+                return createErrorResponse('缺少用户ID', 400);
+            }
+
+            await env.KV_BINDING.delete(`stv_config:${body.userId}:${configId}`);
+            return new Response(JSON.stringify({ success: true }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+        }
+
+        // 切换配置状态
+        if (url.pathname.startsWith('/api/hangup/configs/') && url.pathname.endsWith('/toggle') && request.method === 'POST') {
+            const pathParts = url.pathname.split('/');
+            const configId = pathParts[pathParts.length - 2];
+            let body: any;
+            try {
+                body = await request.json();
+            } catch (e) {
+                return createErrorResponse('无效的JSON格式', 400);
+            }
+
+            if (!body.userId) {
+                return createErrorResponse('缺少用户ID', 400);
+            }
+
+            const configKey = `stv_config:${body.userId}:${configId}`;
+            const configData = await env.KV_BINDING.get(configKey);
+
+            if (configData) {
+                const config: UserConfig = JSON.parse(configData);
+                config.isActive = !config.isActive;
+
+                await env.KV_BINDING.put(configKey, JSON.stringify(config));
+
+                return new Response(JSON.stringify({ success: true, isActive: config.isActive }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                });
+            }
+
+            return createErrorResponse('配置不存在', 404);
+        }
+
+        return createErrorResponse('Not Found', 404);
+
+    } catch (error) {
+        console.error('API Error:', error);
+        return createErrorResponse('Internal Server Error', 500);
+    }
+}
+
+async function serveHangupPage(env: Env): Promise<Response> {
+    const html = `
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STV 自动挂机管理</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 30px 0;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: #7f8c8d;
+            font-size: 1rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .card h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.3rem;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+            color: #2c3e50;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2980b9;
+        }
+
+        .btn-success {
+            background: #27ae60;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #229954;
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+
+        .btn-warning {
+            background: #f39c12;
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: #e67e22;
+        }
+
+        .btn-info {
+            background: #17a2b8;
+            color: white;
+        }
+
+        .btn-info:hover {
+            background: #138496;
+        }
+
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .config-item {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 20px;
+        }
+
+        .config-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .config-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .status {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .status-active {
+            background: #d5f4e6;
+            color: #27ae60;
+        }
+
+        .status-inactive {
+            background: #fadbd8;
+            color: #e74c3c;
+        }
+
+        .config-info {
+            margin-bottom: 15px;
+        }
+
+        .config-info-item {
+            display: flex;
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+
+        .config-info-item strong {
+            min-width: 80px;
+            color: #555;
+        }
+
+        .config-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .message {
+            padding: 12px;
+            border-radius: 4px;
+            margin-top: 15px;
+        }
+
+        .message.success {
+            background: #d5f4e6;
+            color: #27ae60;
+            border: 1px solid #a9dfbf;
+        }
+
+        .message.error {
+            background: #fadbd8;
+            color: #e74c3c;
+            border: 1px solid #f1948a;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+        }
+
+        .empty-state h3 {
+            margin-bottom: 10px;
+            color: #95a5a6;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
+            .header h1 {
+                font-size: 1.5rem;
+            }
+            
+            .card {
+                padding: 20px;
+            }
+            
+            .config-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>STV 自动挂机管理</h1>
+            <p>简单高效的在线状态保持工具</p>
+            <p>作者：明月照大江</p>
+        </div>
+        
+        <div class="card">
+            <h2>用户设置</h2>
+            <div class="form-group">
+                <label for="userId">用户名</label>
+                <input type="text" id="userId" class="form-control" placeholder="请输入您的唯一用户标识，未注册将自动注册">
+            </div>
+            <button class="btn btn-primary" onclick="setUser()">登录/注册</button>
+            <div id="userMessage"></div>
+        </div>
+
+        <div id="configSection" class="hidden">
+            <div class="card">
+                <h2>添加新配置</h2>
+                <form id="configForm">
+                    <div class="form-group">
+                        <label for="configName">配置名称</label>
+                        <input type="text" id="configName" class="form-control" placeholder="例如：主号、小号1 等" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="stvUID">STV 用户ID</label>
+                        <input type="text" id="stvUID" class="form-control" placeholder="您的 STV 用户ID(6位数字)" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="cookie">Cookie</label>
+                        <textarea id="cookie" class="form-control" rows="4" placeholder="请粘贴完整的 Cookie 内容" required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-success">保存配置</button>
+                    <button type="button" class="btn btn-secondary" onclick="clearForm()">清空</button>
+                </form>
+                <div id="configMessage"></div>
+            </div>
+
+            <div class="card">
+                <h2>配置管理</h2>
+                <div style="margin-bottom: 20px;">
+                    <button class="btn btn-info" onclick="loadConfigs()">刷新列表</button>
+                    <button class="btn btn-warning" onclick="manualExecute()">立即执行</button>
+                </div>
+                <div id="configsList"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentUserId = null;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const configForm = document.getElementById('configForm');
+            configForm.addEventListener('submit', async function(event) {
+                event.preventDefault();
+                
+                if (!currentUserId) {
+                    showMessage('configMessage', '请先设置用户名', 'error');
+                    return;
+                }
+
+                const formData = {
+                    userId: currentUserId,
+                    configName: document.getElementById('configName').value.trim(),
+                    stvUID: document.getElementById('stvUID').value.trim(),
+                    cookie: document.getElementById('cookie').value.trim()
+                };
+
+                if (!formData.configName || !formData.stvUID || !formData.cookie) {
+                    showMessage('configMessage', '请填写所有字段', 'error');
+                    return;
+                }
+
+                try {
+                    const response = await fetch('/api/hangup/configs', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(formData)
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        showMessage('configMessage', '配置保存成功！', 'success');
+                        configForm.reset();
+                        loadConfigs();
+                    } else {
+                        showMessage('configMessage', '保存失败: ' + (result.error || '未知错误'), 'error');
+                    }
+                } catch (error) {
+                    console.error('Save error:', error);
+                    showMessage('configMessage', '保存过程中发生错误', 'error');
+                }
+            });
+        });
+
+        function setUser() {
+            const userId = document.getElementById('userId').value.trim();
+            if (!userId) {
+                showMessage('userMessage', '请输入用户名', 'error');
+                return;
+            }
+
+            currentUserId = userId;
+            document.getElementById('configSection').classList.remove('hidden');
+            showMessage('userMessage', '登录成功！', 'success');
+            loadConfigs();
+        }
+
+        async function manualExecute() {
+            try {
+                const response = await fetch('/api/hangup/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showMessage('configMessage', '手动执行完成，请刷新配置列表查看结果', 'success');
+                    loadConfigs();
+                } else {
+                    showMessage('configMessage', '手动执行失败: ' + (result.error || '未知错误'), 'error');
+                }
+            } catch (error) {
+                console.error('Manual execute error:', error);
+                showMessage('configMessage', '手动执行过程中发生错误', 'error');
+            }
+        }
+
+        async function loadConfigs() {
+            if (!currentUserId) return;
+
+            try {
+                const response = await fetch(\`/api/hangup/configs?userId=\${currentUserId}\`);
+                const result = await response.json();
+                
+                if (result.configs) {
+                    displayConfigs(result.configs);
+                }
+            } catch (error) {
+                console.error('Load configs error:', error);
+            }
+        }
+
+        function displayConfigs(configs) {
+            const container = document.getElementById('configsList');
+            if (configs.length === 0) {
+                container.innerHTML = \`
+                    <div class="empty-state">
+                        <h3>暂无配置</h3>
+                        <p>点击上方"添加新配置"开始创建您的第一个配置</p>
+                    </div>
+                \`;
+                return;
+            }
+
+            container.innerHTML = \`
+                <div class="config-grid">
+                    \${configs.map(config => \`
+                        <div class="config-item">
+                            <div class="config-header">
+                                <div class="config-title">\${config.configName}</div>
+                                <div class="status \${config.isActive ? 'status-active' : 'status-inactive'}">
+                                    \${config.isActive ? '运行中' : '已停止'}
+                                </div>
+                            </div>
+                            <div class="config-info">
+                                <div class="config-info-item">
+                                    <strong>STV ID:</strong> \${config.stvUID}
+                                </div>
+                                <div class="config-info-item">
+                                    <strong>执行次数:</strong> \${config.executionCount !== undefined ? config.executionCount : 0} 次
+                                </div>
+                                <div class="config-info-item">
+                                    <strong>上次执行:</strong> \${config.lastExecuted ? new Date(config.lastExecuted).toLocaleString() : '未执行'}
+                                </div>
+                                <div class="config-info-item">
+                                    <strong>执行结果:</strong> \${config.lastResult !== undefined ? config.lastResult : '无'}
+                                </div>
+                                <div class="config-info-item">
+                                    <strong>创建时间:</strong> \${new Date(config.createdAt).toLocaleString()}
+                                </div>
+                            </div>
+                            <div class="config-actions">
+                                <button class="btn \${config.isActive ? 'btn-danger' : 'btn-success'}" onclick="toggleConfig('\${config.configId}')">
+                                    \${config.isActive ? '停止' : '启动'}
+                                </button>
+                                <button class="btn btn-danger" onclick="deleteConfig('\${config.configId}')">删除</button>
+                            </div>
+                        </div>
+                    \`).join('')}
+                </div>
+            \`;
+        }
+
+        async function toggleConfig(configId) {
+            try {
+                const response = await fetch(\`/api/hangup/configs/\${configId}/toggle\`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: currentUserId })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    loadConfigs();
+                }
+            } catch (error) {
+                console.error('Toggle error:', error);
+            }
+        }
+
+        async function deleteConfig(configId) {
+            if (!confirm('确定要删除这个配置吗？')) return;
+
+            try {
+                const response = await fetch(\`/api/hangup/configs/\${configId}\`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: currentUserId })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    loadConfigs();
+                }
+            } catch (error) {
+                console.error('Delete error:', error);
+            }
+        }
+
+        // 删除配置功能
+        // 注意：此处删除了重复的deleteConfig函数定义
+
+        function showMessage(elementId, message, type) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = message;
+            element.className = \`message \${type}\`;
+        }
+    </script>
+</body>
+</html>`;
+
+    return new Response(html, {
+        headers: { 'Content-Type': 'text/html;charset=UTF-8' }
+    });
+}
+
+async function executeAllHangupTasks(env: Env, ctx: ExecutionContext) {
+    try {
+        console.log('=== 开始执行所有挂机任务 ===');
+
+        const allKeys = await env.KV_BINDING.list({ prefix: 'stv_config:' });
+        console.log(`找到 ${allKeys.keys.length} 个配置`);
+
+        for (const key of allKeys.keys) {
+            await processHangupTask(key.name, env);
+        }
+        console.log('=== 所有挂机任务执行完毕 ===');
+
+        // 检查是否应该发送每日通知
+        if (await shouldSendDailyNotification(env)) {
+            // 获取所有配置的执行状态
+            const configs = await getAllConfigs(env);
+            
+            // 生成通知内容
+            const title = 'STV 自动挂机报告';
+            let content = `<h2>STV 自动挂机报告</h2>`;
+            content += `<p>执行时间: ${new Date().toLocaleString()}</p>`;
+            content += `<p>总配置数: ${configs.length}</p>`;
+            
+            // 统计活跃配置和执行结果
+            const activeConfigs = configs.filter(config => config.isActive);
+            const successConfigs = configs.filter(config => config.lastResult && config.lastResult.includes('成功'));
+            const failedConfigs = configs.filter(config => config.lastResult && (config.lastResult.includes('失败') || config.lastResult.includes('错误')));
+            
+            content += `<p>活跃配置数: ${activeConfigs.length}</p>`;
+            content += `<p>执行成功数: ${successConfigs.length}</p>`;
+            content += `<p>执行失败数: ${failedConfigs.length}</p>`;
+            
+            // 详细列出每个配置的执行情况
+            content += `<h3>详细执行情况:</h3>`;
+            content += `<ul>`;
+            for (const config of configs) {
+                const status = config.isActive ? '🟢 运行中' : '🔴 已停止';
+                const result = config.lastResult || '无';
+                const lastExecuted = config.lastExecuted ? new Date(config.lastExecuted).toLocaleString() : '未执行';
+                content += `<li>${config.configName} (${config.stvUID}): ${status} - ${result} (上次执行: ${lastExecuted})</li>`;
+            }
+            content += `</ul>`;
+            
+            // 发送通知
+            await sendPushPlusNotification(env, title, content);
+            
+            // 记录通知发送时间
+            await recordNotificationTime(env);
+        }
+    } catch (error) {
+        console.error('执行挂机任务时发生错误:', error);
+    }
+}
+
+async function processHangupTask(configKey: string, env: Env) {
+    try {
+        const configData = await env.KV_BINDING.get(configKey);
+        if (!configData) return;
+
+        const config: UserConfig = JSON.parse(configData);
+        
+        // 跳过非活跃配置
+        if (!config.isActive) {
+            console.log(`⏭️ 跳过非活跃配置: ${config.configName}`);
+            return;
+        }
+
+        const originalIsActive = config.isActive;
+        const originalLastResult = config.lastResult;
+        const originalLastExecuted = config.lastExecuted;
+
+        // 执行挂机请求
+        const result = await executeHangupRequest(config);
+
+        // 更新配置状态
+        updateConfigStatus(config, result);
+
+        // 检查是否需要更新 KV 存储
+        const shouldUpdateKV = (
+            // 当活跃状态或结果消息发生变化时
+            config.isActive !== originalIsActive || 
+            config.lastResult !== originalLastResult ||
+            // 或者距离上次更新超过1小时时
+            (originalLastExecuted &&
+             (new Date().getTime() - new Date(originalLastExecuted).getTime()) > 60 * 60 * 1000)
+        );
+
+        // 如果需要更新，则写入 KV 存储
+        if (shouldUpdateKV) {
+            await env.KV_BINDING.put(`stv_config:${config.userId}:${config.configId}`, JSON.stringify(config));
+        }
+    } catch (error) {
+        console.error(`处理配置时发生错误:`, error);
+    }
+}
+
+async function executeHangupRequest(config: UserConfig): Promise<{ success: boolean; message: string }> {
+    try {
+        console.log(`🚀 开始执行挂机请求: ${config.configName} (${config.stvUID})`);
+        const response = await fetch(`https://sangtacviet.app/io/user/online?ngmar=ol2&u=${config.stvUID}`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Cookie": config.cookie,
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "X-Requested-With": "XMLHttpRequest"
+            },
+            body: "sajax=online&ngmar=ol"
+        });
+
+        const result = await response.text();
+        const status = response.status;
+        const success = ((status >= 200 && status < 400) || status === 522) 
+                && /^\d+$/.test(result.trim());
+
+        if (success) {
+            console.log(`📊 挂机请求成功: ${config.configName}`);
+            return { success: true, message: "✅ 成功" };
+        } else {
+            console.warn(`⚠️ 挂机请求失败，已禁用配置: ${config.configName}`);
+            return { success: false, message: `❌ 失败: ${result.substring(0, 100)}` };
+        }
+    } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : "Unknown error";
+        console.error(`💥 挂机请求异常，已禁用配置: ${config.configName} - ${errorMsg}`);
+        return { success: false, message: `❌ 错误: ${errorMsg}` };
+    }
+}
+
+function updateConfigStatus(config: UserConfig, result: { success: boolean; message: string }) {
+    config.lastExecuted = new Date().toISOString();
+    config.executionCount = (config.executionCount || 0) + 1;
+    config.lastResult = result.message;
+
+    // 如果请求失败，禁用配置
+    if (!result.success) {
+        config.isActive = false;
+    }
+}
+
+async function getUserConfigs(userId: string, env: Env): Promise<UserConfig[]> {
+    const configs: UserConfig[] = [];
+    const allKeys = await env.KV_BINDING.list({ prefix: `stv_config:${userId}:` });
+
+    for (const key of allKeys.keys) {
+        try {
+            const configData = await env.KV_BINDING.get(key.name);
+            if (configData) {
+                const config: UserConfig = JSON.parse(configData);
+                delete (config as any).cookie;
+                configs.push(config);
+            }
+        } catch (error) {
+            console.error(`Error loading config ${key.name}:`, error);
+        }
+    }
+
+    return configs;
+}
+
+// 获取所有用户的配置
+async function getAllConfigs(env: Env): Promise<UserConfig[]> {
+    const configs: UserConfig[] = [];
+    const allKeys = await env.KV_BINDING.list({ prefix: 'stv_config:' });
+
+    for (const key of allKeys.keys) {
+        try {
+            const configData = await env.KV_BINDING.get(key.name);
+            if (configData) {
+                const config: UserConfig = JSON.parse(configData);
+                delete (config as any).cookie;
+                configs.push(config);
+            }
+        } catch (error) {
+            console.error(`Error loading config ${key.name}:`, error);
+        }
+    }
+
+    return configs;
+}
+
+function generateConfigId(): string {
+    return 'cfg_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 15);
+}
+
+// 根据 stvUID 查找配置
+async function findConfigByStvUID(userId: string, stvUID: string, env: Env): Promise<{ config: UserConfig | null, configId: string | null }> {
+    const allKeys = await env.KV_BINDING.list({ prefix: `stv_config:${userId}:` });
+    for (const key of allKeys.keys) {
+        const configData = await env.KV_BINDING.get(key.name);
+        if (configData) {
+            const config: UserConfig = JSON.parse(configData);
+            if (config.stvUID === stvUID) {
+                return { config, configId: config.configId };
+            }
+        }
+    }
+    return { config: null, configId: null };
+}
+
+// 验证 UserConfig 对象
+function isValidUserConfig(config: any): config is UserConfig {
+    return (
+        typeof config === 'object' &&
+        typeof config.userId === 'string' &&
+        typeof config.stvUID === 'string' &&
+        typeof config.configName === 'string' &&
+        typeof config.cookie === 'string' &&
+        config.userId.length > 0 &&
+        config.stvUID.length > 0 &&
+        config.configName.length > 0 &&
+        config.cookie.length > 0
+    );
+}
+
+// 创建统一的错误响应
+function createErrorResponse(message: string, status: number = 400): Response {
+    const corsHeaders = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+    };
+    
+    return new Response(JSON.stringify({ success: false, error: message }), {
+        status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+}
+
+// 发送 PushPlus 通知
+async function sendPushPlusNotification(env: Env, title: string, content: string): Promise<void> {
+    const PUSHPLUS_TOKEN = '197817faff36494da3cf79c3ec9c4fba';
+
+    try {
+        const url = `https://www.pushplus.plus/send?token=${PUSHPLUS_TOKEN}&title=${encodeURIComponent(title)}&content=${encodeURIComponent(content)}&template=html`;
+        const response = await fetch(url, { method: 'GET' });
+        
+        if (!response.ok) {
+            console.error(`PushPlus 通知发送失败: ${response.status} ${response.statusText}`);
+        } else {
+            console.log('PushPlus 通知发送成功');
+        }
+    } catch (error) {
+        console.error('PushPlus 通知发送异常:', error);
+    }
+}
+
+// 检查是否应该发送每日通知
+async function shouldSendDailyNotification(env: Env): Promise<boolean> {
+    const lastNotificationKey = 'last_pushplus_notification';
+    const lastNotification = await env.KV_BINDING.get(lastNotificationKey);
+    
+    if (!lastNotification) {
+        // 如果没有记录上次通知时间，则应该发送通知
+        return true;
+    }
+    
+    const lastNotificationTime = new Date(lastNotification).getTime();
+    const now = new Date().getTime();
+    
+    // 如果距离上次通知超过24小时，则应该发送通知
+    return (now - lastNotificationTime) > 24 * 60 * 60 * 1000;
+}
+
+// 记录通知发送时间
+async function recordNotificationTime(env: Env): Promise<void> {
+    const lastNotificationKey = 'last_pushplus_notification';
+    await env.KV_BINDING.put(lastNotificationKey, new Date().toISOString());
+}
+
+function clearForm() {
+    const form = document.getElementById('configForm') as HTMLFormElement | null;
+    if (form) {
+        form.reset();
+        const messageElement = document.getElementById('configMessage');
+        if (messageElement) {
+            messageElement.innerHTML = '表单已清空';
+            messageElement.className = 'message success';
+        }
+    } else {
+        const messageElement = document.getElementById('configMessage');
+        if (messageElement) {
+            messageElement.innerHTML = '未找到表单元素';
+            messageElement.className = 'message error';
+        }
+    }
+}
