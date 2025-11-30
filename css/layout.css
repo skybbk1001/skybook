@@ -177,7 +177,7 @@ s {
   display: block;
 }
 .main .post .article-entry p {
-  line-height: 1.8em;
+  line-height: 1.8;
 }
 .article-tag-list-item {
   display: inline;
