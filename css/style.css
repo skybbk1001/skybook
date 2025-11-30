@@ -87,7 +87,7 @@ figure.highlight > .clipboard-btn .icon:before {
   grid-column: 2;
 }
 .indent p {
-  text-indent: 2em;
+  text-indent: 2rem;
 }
 .link-card {
   position: relative;
@@ -318,7 +318,7 @@ figure.highlight > .clipboard-btn .icon:before {
   font-family: 'Raleway', Georgia, 'Times New Roman', Times, serif;
 }
 .post-item p {
-  line-height: 1.5em;
+  line-height: 1.8;
   text-align: justify;
   font-size: 20px;
   font-family: 'Noto Serif', 'Noto Serif SC', sans-serif;
@@ -402,7 +402,7 @@ figure.highlight > .clipboard-btn .icon:before {
   margin-bottom: 1.25em;
 }
 .post p {
-  line-height: 1.5em;
+  line-height: 1.8;
   text-align: justify;
   font-size: 20px;
   font-family: 'Noto Serif', 'Noto Serif SC', sans-serif;
