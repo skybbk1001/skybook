@@ -1,5 +1,5 @@
 .indent p {
-  text-indent: 2rem;
+  text-indent: 2em;
 }
 .text-indent-none {
   text-indent: 0 !important;

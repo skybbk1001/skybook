@@ -87,7 +87,7 @@ figure.highlight > .clipboard-btn .icon:before {
   grid-column: 2;
 }
 .indent p {
-  text-indent: 2rem;
+  text-indent: 2em;
 }
 .link-card {
   position: relative;
