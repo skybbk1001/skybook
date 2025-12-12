@@ -1,4 +1,4 @@
-(function (ctx) {
+function __initUtil(ctx) {
 
   ctx.rateLimit = function (key, interval) {
     const System = Packages.java.lang.System;
@@ -23,4 +23,4 @@
     }
   };
 
-})(this);
+}
