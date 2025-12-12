@@ -1,22 +1,26 @@
-function rateLimit(key, interval) {
-  const System = Packages.java.lang.System;
-  const Thread = Packages.java.lang.Thread;
-  const AtomicLong = Packages.java.util.concurrent.atomic.AtomicLong;
+(function (ctx) {
 
-  const props = System.getProperties();
-  const timer = props.computeIfAbsent(
-    key,
-    () => new AtomicLong(0)
-  );
+  ctx.rateLimit = function (key, interval) {
+    const System = Packages.java.lang.System;
+    const Thread = Packages.java.lang.Thread;
+    const AtomicLong = Packages.java.util.concurrent.atomic.AtomicLong;
 
-  while (true) {
-    let now = System.currentTimeMillis();
-    let last = timer.get();
-    let elapsed = now - last;
+    const props = System.getProperties();
+    const timer = props.computeIfAbsent(
+      key,
+      () => new AtomicLong(0)
+    );
 
-    if (elapsed >= interval && timer.compareAndSet(last, now)) return
+    while (true) {
+      let now = System.currentTimeMillis();
+      let last = timer.get();
+      let elapsed = now - last;
 
-    let wait = interval - elapsed + 20;
-    Thread.sleep(wait > 0 ? Math.min(wait, 500) : 20);
-  }
-}
+      if (elapsed >= interval && timer.compareAndSet(last, now)) return;
+
+      let wait = interval - elapsed + 20;
+      Thread.sleep(wait > 0 ? Math.min(wait, 500) : 20);
+    }
+  };
+
+})(this);
