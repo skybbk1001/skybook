@@ -246,7 +246,7 @@ figure.highlight > .clipboard-btn .icon:before {
 .article-entry:not([id^='eq:'])>table td,
 .article-entry div:not([id^='eq:'])>table td {
   padding: 0.25em 0.5em;
-  white-space: nowrap;
+  white-space: normal;
 }
 .article-entry:not([id^='eq:'])>table td:first-child,
 .article-entry div:not([id^='eq:'])>table td:first-child,
