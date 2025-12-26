@@ -134,6 +134,20 @@ document.addEventListener('DOMContentLoaded', async function () {
   }
 });
 
+function renderSummary(container, summary) {
+  if (!container) return;
+  const data = summary || {};
+  container.querySelectorAll('[data-key]').forEach(item => {
+    const key = item.getAttribute('data-key');
+    if (!key) return;
+    if (Object.prototype.hasOwnProperty.call(data, key)) {
+      item.textContent = formatNumber(data[key]);
+    } else {
+      item.textContent = '-';
+    }
+  });
+}
+
 async function fetchJson(url) {
   const response = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
   if (!response.ok) {

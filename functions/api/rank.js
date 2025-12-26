@@ -13,12 +13,6 @@ function jsonResponse(body, status = 200) {
   });
 }
 
-function stringifyError(err) {
-  if (!err) return "";
-  if (err instanceof Error) return err.message;
-  return String(err);
-}
-
 function getSqlApiConfig(env) {
   const accountId = env.AE_ACCOUNT_ID || "";
   const apiToken = env.AE_API_TOKEN || "";
@@ -161,21 +155,10 @@ async function queryRows(env, sql, params) {
   }
 }
 
-export async function onRequestGet({ request, env }) {
+export async function onRequestGet({ env }) {
   if (!env.ANALYTICS) {
     return jsonResponse({ error: "Missing ANALYTICS binding." }, 500);
   }
-
-  const url = new URL(request.url);
-  const debugEnabled = url.searchParams.get("debug") === "1";
-  const sqlApiConfig = getSqlApiConfig(env);
-  const debug = debugEnabled
-    ? {
-        table: TABLE,
-        queryAvailable: typeof env.ANALYTICS.query === "function",
-        sqlApiConfigured: Boolean(sqlApiConfig),
-      }
-    : null;
 
   const { dayStart, weekStart, monthStart } = getShanghaiRanges();
 
@@ -209,20 +192,6 @@ export async function onRequestGet({ request, env }) {
     ),
   ]);
 
-  if (debugEnabled) {
-    debug.range = { dayStart, weekStart, monthStart };
-    try {
-      const result = await runQuery(
-        env,
-        `SELECT COUNT(*) AS total FROM ${TABLE}`,
-        []
-      );
-      debug.count = getNumber(unwrapRows(result), "total");
-    } catch (err) {
-      debug.countError = stringifyError(err);
-    }
-  }
-
   const normalizedPages = pages
     .map((item) => {
       const path = normalizePath(item.path || item.index1 || "");
@@ -242,6 +211,5 @@ export async function onRequestGet({ request, env }) {
     },
     pages: normalizedPages,
     updatedAt: new Date().toISOString(),
-    ...(debugEnabled ? { debug } : {}),
   });
 }
