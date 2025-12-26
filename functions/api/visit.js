@@ -17,6 +17,56 @@ function stringifyError(err) {
   return String(err);
 }
 
+function getSqlApiConfig(env) {
+  const accountId = env.AE_ACCOUNT_ID || "";
+  const apiToken = env.AE_API_TOKEN || "";
+  if (!accountId || !apiToken) return null;
+  return { accountId, apiToken };
+}
+
+function formatSqlValue(value) {
+  if (value === null || value === undefined) return "NULL";
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function formatSqlWithParams(sql, params = []) {
+  if (!params.length) return sql;
+  let index = 0;
+  return sql.replace(/\?/g, () => formatSqlValue(params[index++]));
+}
+
+async function runSqlApi(env, sql, params = []) {
+  const config = getSqlApiConfig(env);
+  if (!config) {
+    throw new Error("Missing Analytics Engine SQL API credentials.");
+  }
+  const endpoint = `https://api.cloudflare.com/client/v4/accounts/${config.accountId}/analytics_engine/sql`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${config.apiToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      sql: formatSqlWithParams(sql, params),
+    }),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Analytics Engine SQL API failed (${response.status}): ${text}`);
+  }
+  const payload = await response.json();
+  if (payload && payload.success === false) {
+    const message =
+      payload.errors && payload.errors.length
+        ? payload.errors[0].message
+        : "Analytics Engine SQL API error";
+    throw new Error(message);
+  }
+  return payload.result || payload;
+}
+
 function normalizePath(input) {
   let path = (input || "").trim();
   if (!path) return "/";
@@ -51,17 +101,30 @@ async function getVisitorId(request) {
   return sha256Hex(`${ip}|${ua}`);
 }
 
-async function runQuery(binding, sql, params = []) {
-  try {
-    return await binding.query({ sql, params });
-  } catch (err) {
-    return await binding.query(sql, params);
+async function runQuery(env, sql, params = []) {
+  const binding = env.ANALYTICS;
+  if (binding && typeof binding.query === "function") {
+    try {
+      return await binding.query({ sql, params });
+    } catch (err) {
+      try {
+        return await binding.query(sql, params);
+      } catch (inner) {
+        if (getSqlApiConfig(env)) {
+          return await runSqlApi(env, sql, params);
+        }
+        throw inner;
+      }
+    }
   }
+  return await runSqlApi(env, sql, params);
 }
 
 function unwrapRows(result) {
   if (!result) return [];
   if (Array.isArray(result)) return result;
+  if (Array.isArray(result.result)) return result.result;
+  if (result.result && Array.isArray(result.result.data)) return result.result.data;
   if (Array.isArray(result.results)) return result.results;
   if (Array.isArray(result.data)) return result.data;
   if (Array.isArray(result.rows)) return result.rows;
@@ -78,7 +141,7 @@ function getNumber(rows, key) {
 
 async function queryNumber(env, sql, params, key, fallback = 0) {
   try {
-    const result = await runQuery(env.ANALYTICS, sql, params);
+    const result = await runQuery(env, sql, params);
     return getNumber(unwrapRows(result), key);
   } catch (err) {
     console.error("Analytics query failed:", err);
@@ -107,10 +170,12 @@ export async function onRequestGet({ request, env }) {
 
   const url = new URL(request.url);
   const debugEnabled = url.searchParams.get("debug") === "1";
+  const sqlApiConfig = getSqlApiConfig(env);
   const debug = debugEnabled
     ? {
         table: TABLE,
         queryAvailable: typeof env.ANALYTICS.query === "function",
+        sqlApiConfigured: Boolean(sqlApiConfig),
       }
     : null;
   const pageParam = url.searchParams.get("page") || "";
@@ -145,7 +210,7 @@ export async function onRequestGet({ request, env }) {
   if (debugEnabled) {
     try {
       const result = await runQuery(
-        env.ANALYTICS,
+        env,
         `SELECT COUNT(*) AS total FROM ${TABLE}`,
         []
       );
@@ -156,7 +221,7 @@ export async function onRequestGet({ request, env }) {
 
     try {
       const result = await runQuery(
-        env.ANALYTICS,
+        env,
         `SELECT timestamp, index1, double1 FROM ${TABLE} ORDER BY timestamp DESC LIMIT 1`,
         []
       );
