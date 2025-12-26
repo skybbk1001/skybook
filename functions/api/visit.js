@@ -100,25 +100,6 @@ async function getVisitorId(request) {
   return sha256Hex(`${ip}|${ua}`);
 }
 
-async function runQuery(env, sql, params = []) {
-  const binding = env.ANALYTICS;
-  if (binding && typeof binding.query === "function") {
-    try {
-      return await binding.query({ sql, params });
-    } catch (err) {
-      try {
-        return await binding.query(sql, params);
-      } catch (inner) {
-        if (getSqlApiConfig(env)) {
-          return await runSqlApi(env, sql, params);
-        }
-        throw inner;
-      }
-    }
-  }
-  return await runSqlApi(env, sql, params);
-}
-
 function unwrapRows(result) {
   if (!result) return [];
   if (Array.isArray(result)) return result;
@@ -140,7 +121,7 @@ function getNumber(rows, key) {
 
 async function queryNumber(env, sql, params, key, fallback = 0) {
   try {
-    const result = await runQuery(env, sql, params);
+    const result = await runSqlApi(env, sql, params);
     return getNumber(unwrapRows(result), key);
   } catch (err) {
     console.error("Analytics query failed:", err);

@@ -78,6 +78,16 @@ function normalizePath(input) {
   return path;
 }
 
+function formatSqlDateTime(date) {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const hours = String(date.getUTCHours()).padStart(2, "0");
+  const minutes = String(date.getUTCMinutes()).padStart(2, "0");
+  const seconds = String(date.getUTCSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
 function getShanghaiRanges() {
   const now = new Date(Date.now() + TZ_OFFSET_MS);
   const year = now.getUTCFullYear();
@@ -91,29 +101,10 @@ function getShanghaiRanges() {
   const monthStart = new Date(Date.UTC(year, month, 1) - TZ_OFFSET_MS);
 
   return {
-    dayStart: dayStart.toISOString(),
-    weekStart: weekStart.toISOString(),
-    monthStart: monthStart.toISOString(),
+    dayStart: formatSqlDateTime(dayStart),
+    weekStart: formatSqlDateTime(weekStart),
+    monthStart: formatSqlDateTime(monthStart),
   };
-}
-
-async function runQuery(env, sql, params = []) {
-  const binding = env.ANALYTICS;
-  if (binding && typeof binding.query === "function") {
-    try {
-      return await binding.query({ sql, params });
-    } catch (err) {
-      try {
-        return await binding.query(sql, params);
-      } catch (inner) {
-        if (getSqlApiConfig(env)) {
-          return await runSqlApi(env, sql, params);
-        }
-        throw inner;
-      }
-    }
-  }
-  return await runSqlApi(env, sql, params);
 }
 
 function unwrapRows(result) {
@@ -137,7 +128,7 @@ function getNumber(rows, key) {
 
 async function queryNumber(env, sql, params, key, fallback = 0) {
   try {
-    const result = await runQuery(env, sql, params);
+    const result = await runSqlApi(env, sql, params);
     return getNumber(unwrapRows(result), key);
   } catch (err) {
     console.error("Analytics query failed:", err);
@@ -147,7 +138,7 @@ async function queryNumber(env, sql, params, key, fallback = 0) {
 
 async function queryRows(env, sql, params) {
   try {
-    const result = await runQuery(env, sql, params);
+    const result = await runSqlApi(env, sql, params);
     return unwrapRows(result);
   } catch (err) {
     console.error("Analytics query failed:", err);
@@ -156,31 +147,27 @@ async function queryRows(env, sql, params) {
 }
 
 export async function onRequestGet({ env }) {
-  if (!env.ANALYTICS) {
-    return jsonResponse({ error: "Missing ANALYTICS binding." }, 500);
-  }
-
   const { dayStart, weekStart, monthStart } = getShanghaiRanges();
 
   const [total, month, week, day, pages] = await Promise.all([
     queryNumber(env, `SELECT SUM(double1) AS pv FROM ${TABLE}`, [], "pv", 0),
     queryNumber(
       env,
-      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE timestamp >= ?`,
+      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE timestamp >= toDateTime(?)`,
       [monthStart],
       "pv",
       0
     ),
     queryNumber(
       env,
-      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE timestamp >= ?`,
+      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE timestamp >= toDateTime(?)`,
       [weekStart],
       "pv",
       0
     ),
     queryNumber(
       env,
-      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE timestamp >= ?`,
+      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE timestamp >= toDateTime(?)`,
       [dayStart],
       "pv",
       0

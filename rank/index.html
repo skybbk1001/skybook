@@ -79,9 +79,9 @@ document.addEventListener('DOMContentLoaded', async function () {
     const postMap = new Map();
     posts.forEach(post => {
       const path = normalizePath(post.path || '');
-      if (path) {
-        postMap.set(path, post);
-      }
+      if (!path) return;
+      postMap.set(path, post);
+      postMap.set(encodeURI(path), post);
     });
 
     const ranked = (rankData.pages || [])
