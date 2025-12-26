@@ -44,21 +44,26 @@ async function runSqlApi(env, sql, params = []) {
     throw new Error("Missing Analytics Engine SQL API credentials.");
   }
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${config.accountId}/analytics_engine/sql`;
+  const finalSql = formatSqlWithParams(sql, params);
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
       authorization: `Bearer ${config.apiToken}`,
-      "content-type": "application/json",
+      "content-type": "text/plain; charset=utf-8",
     },
-    body: JSON.stringify({
-      sql: formatSqlWithParams(sql, params),
-    }),
+    body: finalSql,
   });
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`Analytics Engine SQL API failed (${response.status}): ${text}`);
   }
-  const payload = await response.json();
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (err) {
+    const text = await response.text();
+    throw new Error(`Analytics Engine SQL API invalid response: ${text}`);
+  }
   if (payload && payload.success === false) {
     const message =
       payload.errors && payload.errors.length
