@@ -1,5 +1,4 @@
 const TABLE = "ANALYTICS";
-const TZ_OFFSET_MS = 8 * 60 * 60 * 1000;
 const LIMIT = 200;
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
@@ -78,34 +77,12 @@ function normalizePath(input) {
   return path;
 }
 
-function formatSqlDateTime(date) {
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(date.getUTCDate()).padStart(2, "0");
-  const hours = String(date.getUTCHours()).padStart(2, "0");
-  const minutes = String(date.getUTCMinutes()).padStart(2, "0");
-  const seconds = String(date.getUTCSeconds()).padStart(2, "0");
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-}
-
-function getShanghaiRanges() {
-  const now = new Date(Date.now() + TZ_OFFSET_MS);
-  const year = now.getUTCFullYear();
-  const month = now.getUTCMonth();
-  const date = now.getUTCDate();
-  const dayOfWeek = now.getUTCDay();
-  const dayStart = new Date(Date.UTC(year, month, date) - TZ_OFFSET_MS);
-  const weekStart = new Date(
-    Date.UTC(year, month, date - ((dayOfWeek + 6) % 7)) - TZ_OFFSET_MS
-  );
-  const monthStart = new Date(Date.UTC(year, month, 1) - TZ_OFFSET_MS);
-
-  return {
-    dayStart: formatSqlDateTime(dayStart),
-    weekStart: formatSqlDateTime(weekStart),
-    monthStart: formatSqlDateTime(monthStart),
-  };
-}
+const CALENDAR_DAY_SQL = `timestamp >= toStartOfDay(now() + INTERVAL 8 HOUR) - INTERVAL 8 HOUR`;
+const CALENDAR_WEEK_SQL = `timestamp >= toStartOfWeek(now() + INTERVAL 8 HOUR, 1) - INTERVAL 8 HOUR`;
+const CALENDAR_MONTH_SQL = `timestamp >= toStartOfMonth(now() + INTERVAL 8 HOUR) - INTERVAL 8 HOUR`;
+const ROLLING_DAY_SQL = `timestamp >= now() - INTERVAL 1 DAY`;
+const ROLLING_WEEK_SQL = `timestamp >= now() - INTERVAL 7 DAY`;
+const ROLLING_MONTH_SQL = `timestamp >= now() - INTERVAL 30 DAY`;
 
 function unwrapRows(result) {
   if (!result) return [];
@@ -136,6 +113,28 @@ async function queryNumber(env, sql, params, key, fallback = 0) {
   }
 }
 
+async function queryNumberWithFallback(
+  env,
+  primarySql,
+  fallbackSql,
+  key,
+  fallbackValue = 0
+) {
+  try {
+    const result = await runSqlApi(env, primarySql, []);
+    return getNumber(unwrapRows(result), key);
+  } catch (err) {
+    console.error("Analytics query failed:", err);
+    try {
+      const result = await runSqlApi(env, fallbackSql, []);
+      return getNumber(unwrapRows(result), key);
+    } catch (inner) {
+      console.error("Analytics query fallback failed:", inner);
+      return fallbackValue;
+    }
+  }
+}
+
 async function queryRows(env, sql, params) {
   try {
     const result = await runSqlApi(env, sql, params);
@@ -147,28 +146,26 @@ async function queryRows(env, sql, params) {
 }
 
 export async function onRequestGet({ env }) {
-  const { dayStart, weekStart, monthStart } = getShanghaiRanges();
-
   const [total, month, week, day, pages] = await Promise.all([
     queryNumber(env, `SELECT SUM(double1) AS pv FROM ${TABLE}`, [], "pv", 0),
-    queryNumber(
+    queryNumberWithFallback(
       env,
-      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE timestamp >= toDateTime(?)`,
-      [monthStart],
+      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_MONTH_SQL}`,
+      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_MONTH_SQL}`,
       "pv",
       0
     ),
-    queryNumber(
+    queryNumberWithFallback(
       env,
-      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE timestamp >= toDateTime(?)`,
-      [weekStart],
+      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_WEEK_SQL}`,
+      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_WEEK_SQL}`,
       "pv",
       0
     ),
-    queryNumber(
+    queryNumberWithFallback(
       env,
-      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE timestamp >= toDateTime(?)`,
-      [dayStart],
+      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_DAY_SQL}`,
+      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_DAY_SQL}`,
       "pv",
       0
     ),

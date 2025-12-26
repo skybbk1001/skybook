@@ -78,16 +78,13 @@ document.addEventListener('DOMContentLoaded', async function () {
     const posts = extractPosts(contentData);
     const postMap = new Map();
     posts.forEach(post => {
-      const path = normalizePath(post.path || '');
-      if (!path) return;
-      postMap.set(path, post);
-      postMap.set(encodeURI(path), post);
+      addPathVariants(postMap, post.path || '', post);
     });
 
     const ranked = (rankData.pages || [])
       .map(item => {
         const path = normalizePath(item.path || '');
-        const post = postMap.get(path);
+        const post = findPostByPath(postMap, path);
         if (!post) return null;
         return {
           path,
@@ -178,6 +175,72 @@ function normalizePath(input) {
   const hasExt = /\.[a-zA-Z0-9]+$/.test(path);
   if (path !== '/' && !hasExt && !path.endsWith('/')) path += '/';
   return path;
+}
+
+function addPathVariants(map, rawPath, post) {
+  const normalized = normalizePath(rawPath || '');
+  if (!normalized) return;
+  const variants = new Set();
+  const hasExt = /\.[a-zA-Z0-9]+$/.test(normalized);
+
+  variants.add(normalized);
+  variants.add(encodeURI(normalized));
+
+  if (normalized.endsWith('/')) {
+    const withoutSlash = normalized.slice(0, -1);
+    if (withoutSlash) {
+      variants.add(withoutSlash);
+      variants.add(encodeURI(withoutSlash));
+    }
+    variants.add(`${normalized}index.html`);
+    variants.add(encodeURI(`${normalized}index.html`));
+  } else {
+    variants.add(`${normalized}/`);
+    variants.add(encodeURI(`${normalized}/`));
+    if (!hasExt) {
+      variants.add(`${normalized}.html`);
+      variants.add(encodeURI(`${normalized}.html`));
+    }
+  }
+
+  variants.forEach(key => {
+    if (key) {
+      map.set(key, post);
+    }
+  });
+}
+
+function findPostByPath(map, rawPath) {
+  const normalized = normalizePath(rawPath || '');
+  const candidates = [
+    normalized,
+    encodeURI(normalized),
+    normalized.endsWith('/') ? normalized.slice(0, -1) : `${normalized}/`,
+    normalized.endsWith('/')
+      ? `${normalized}index.html`
+      : /\.[a-zA-Z0-9]+$/.test(normalized)
+      ? normalized
+      : `${normalized}.html`
+  ];
+
+  for (const key of candidates) {
+    if (map.has(key)) {
+      return map.get(key);
+    }
+    const decoded = safeDecode(key);
+    if (decoded && map.has(decoded)) {
+      return map.get(decoded);
+    }
+  }
+  return null;
+}
+
+function safeDecode(value) {
+  try {
+    return decodeURI(value);
+  } catch (err) {
+    return value;
+  }
 }
 
 function formatNumber(value) {
