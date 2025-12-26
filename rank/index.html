@@ -70,12 +70,12 @@ document.addEventListener('DOMContentLoaded', async function () {
   try {
     const [rankData, contentData] = await Promise.all([
       fetchJson('/api/rank'),
-      fetchContentJson()
+      fetchJson('/content.json')
     ]);
 
     renderSummary(summaryEl, rankData && rankData.summary);
 
-    const posts = extractPosts(contentData);
+    const posts = extractPosts(contentData)
     const postMap = new Map();
     posts.forEach(post => {
       addPathVariants(postMap, post.path || '', post);
@@ -151,14 +151,6 @@ async function fetchJson(url) {
     throw new Error(`请求失败: ${response.status}`);
   }
   return response.json();
-}
-
-async function fetchContentJson() {
-  try {
-    return await fetchJson('/cont.json');
-  } catch (err) {
-    return await fetchJson('/content.json');
-  }
 }
 
 function extractPosts(data) {
