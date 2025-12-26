@@ -11,6 +11,12 @@ function jsonResponse(body, status = 200) {
   });
 }
 
+function stringifyError(err) {
+  if (!err) return "";
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
 function normalizePath(input) {
   let path = (input || "").trim();
   if (!path) return "/";
@@ -87,8 +93,10 @@ async function recordPageView(env, path, visitorId) {
       blobs: [visitorId],
       doubles: [1],
     });
+    return null;
   } catch (err) {
     console.error("writeDataPoint failed:", err);
+    return err;
   }
 }
 
@@ -98,11 +106,22 @@ export async function onRequestGet({ request, env }) {
   }
 
   const url = new URL(request.url);
+  const debugEnabled = url.searchParams.get("debug") === "1";
+  const debug = debugEnabled
+    ? {
+        table: TABLE,
+        queryAvailable: typeof env.ANALYTICS.query === "function",
+      }
+    : null;
   const pageParam = url.searchParams.get("page") || "";
   const pagePath = normalizePath(resolvePath(pageParam, request.url));
 
   const visitorId = await getVisitorId(request);
-  await recordPageView(env, pagePath, visitorId);
+  const writeError = await recordPageView(env, pagePath, visitorId);
+  if (debugEnabled) {
+    debug.pagePath = pagePath;
+    debug.writeError = writeError ? stringifyError(writeError) : "";
+  }
 
   const [pagePv, sitePv] = await Promise.all([
     queryNumber(
@@ -123,9 +142,35 @@ export async function onRequestGet({ request, env }) {
     sitePv
   );
 
+  if (debugEnabled) {
+    try {
+      const result = await runQuery(
+        env.ANALYTICS,
+        `SELECT COUNT(*) AS total FROM ${TABLE}`,
+        []
+      );
+      debug.count = getNumber(unwrapRows(result), "total");
+    } catch (err) {
+      debug.countError = stringifyError(err);
+    }
+
+    try {
+      const result = await runQuery(
+        env.ANALYTICS,
+        `SELECT timestamp, index1, double1 FROM ${TABLE} ORDER BY timestamp DESC LIMIT 1`,
+        []
+      );
+      const rows = unwrapRows(result);
+      debug.latest = rows && rows.length ? rows[0] : null;
+    } catch (err) {
+      debug.latestError = stringifyError(err);
+    }
+  }
+
   return jsonResponse({
     page_pv: pagePv,
     site_pv: sitePv,
     site_uv: siteUv,
+    ...(debugEnabled ? { debug } : {}),
   });
 }

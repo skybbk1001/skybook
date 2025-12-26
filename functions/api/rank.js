@@ -13,6 +13,12 @@ function jsonResponse(body, status = 200) {
   });
 }
 
+function stringifyError(err) {
+  if (!err) return "";
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
 function normalizePath(input) {
   let path = (input || "").trim();
   if (!path) return "/";
@@ -87,10 +93,19 @@ async function queryRows(env, sql, params) {
   }
 }
 
-export async function onRequestGet({ env }) {
+export async function onRequestGet({ request, env }) {
   if (!env.ANALYTICS) {
     return jsonResponse({ error: "Missing ANALYTICS binding." }, 500);
   }
+
+  const url = new URL(request.url);
+  const debugEnabled = url.searchParams.get("debug") === "1";
+  const debug = debugEnabled
+    ? {
+        table: TABLE,
+        queryAvailable: typeof env.ANALYTICS.query === "function",
+      }
+    : null;
 
   const { dayStart, weekStart, monthStart } = getShanghaiRanges();
 
@@ -124,6 +139,20 @@ export async function onRequestGet({ env }) {
     ),
   ]);
 
+  if (debugEnabled) {
+    debug.range = { dayStart, weekStart, monthStart };
+    try {
+      const result = await runQuery(
+        env.ANALYTICS,
+        `SELECT COUNT(*) AS total FROM ${TABLE}`,
+        []
+      );
+      debug.count = getNumber(unwrapRows(result), "total");
+    } catch (err) {
+      debug.countError = stringifyError(err);
+    }
+  }
+
   const normalizedPages = pages
     .map((item) => {
       const path = normalizePath(item.path || item.index1 || "");
@@ -143,5 +172,6 @@ export async function onRequestGet({ env }) {
     },
     pages: normalizedPages,
     updatedAt: new Date().toISOString(),
+    ...(debugEnabled ? { debug } : {}),
   });
 }
