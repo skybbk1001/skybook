@@ -77,9 +77,42 @@ function normalizePath(input) {
 }
 
 function resolvePath(pageParam, baseUrl) {
-  if (!pageParam) return "/";
+  let raw = (pageParam || "").trim();
+  if (!raw) return "/";
+  for (let i = 0; i < 2; i++) {
+    if (!/%[0-9A-Fa-f]{2}/.test(raw)) break;
+    try {
+      const decoded = decodeURIComponent(raw);
+      if (decoded === raw) break;
+      raw = decoded;
+    } catch (err) {
+      break;
+    }
+  }
+  const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw);
+  const isProtocolRelative = raw.startsWith("//");
+  if (hasScheme || isProtocolRelative) {
+    try {
+      return new URL(raw, baseUrl).pathname || "/";
+    } catch (err) {
+      return "/";
+    }
+  }
+  const firstSegment = raw.split("/")[0] || "";
+  const looksLikeHost =
+    !raw.startsWith("/") &&
+    /[a-z]/i.test(firstSegment) &&
+    firstSegment.includes(".") &&
+    /^[a-z0-9.-]+$/i.test(firstSegment);
+  if (looksLikeHost) {
+    try {
+      return new URL(`https://${raw}`).pathname || "/";
+    } catch (err) {
+      return "/";
+    }
+  }
   try {
-    return new URL(pageParam, baseUrl).pathname || "/";
+    return new URL(raw, baseUrl).pathname || "/";
   } catch (err) {
     return "/";
   }
