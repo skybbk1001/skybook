@@ -179,24 +179,24 @@ export async function onRequestGet({ env, request }) {
   const [total, month, week, day, pagesTotal, pagesMonth, pagesWeek, pagesDay] =
     await Promise.all([
       queryNumber(env, `SELECT SUM(double1) AS pv FROM ${TABLE}`, [], "pv", 0),
-      queryNumberWithFallback(
+      queryNumber(
         env,
-        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_MONTH_SQL}`,
         `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_MONTH_SQL}`,
+        [],
         "pv",
         0
       ),
-      queryNumberWithFallback(
+      queryNumber(
         env,
-        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_WEEK_SQL}`,
         `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_WEEK_SQL}`,
+        [],
         "pv",
         0
       ),
-      queryNumberWithFallback(
+      queryNumber(
         env,
-        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_DAY_SQL}`,
         `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_DAY_SQL}`,
+        [],
         "pv",
         0
       ),
@@ -205,21 +205,18 @@ export async function onRequestGet({ env, request }) {
         `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
         []
       ),
-      queryRowsWithFallback(
+      queryRows(
         env,
-        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_MONTH_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
         `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_MONTH_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
         []
       ),
-      queryRowsWithFallback(
+      queryRows(
         env,
-        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_WEEK_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
         `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_WEEK_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
         []
       ),
-      queryRowsWithFallback(
+      queryRows(
         env,
-        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_DAY_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
         `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_DAY_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
         []
       ),
