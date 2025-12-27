@@ -173,55 +173,66 @@ function normalizePages(pages) {
     .filter((item) => item.path && item.path !== "/");
 }
 
-export async function onRequestGet({ env }) {
+export async function onRequestGet({ env, request }) {
+  const debugEnabled =
+    request && new URL(request.url).searchParams.get("debug") === "1";
   const [total, month, week, day, pagesTotal, pagesMonth, pagesWeek, pagesDay] =
     await Promise.all([
-    queryNumber(env, `SELECT SUM(double1) AS pv FROM ${TABLE}`, [], "pv", 0),
-    queryNumberWithFallback(
-      env,
-      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_MONTH_SQL}`,
-      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_MONTH_SQL}`,
-      "pv",
-      0
-    ),
-    queryNumberWithFallback(
-      env,
-      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_WEEK_SQL}`,
-      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_WEEK_SQL}`,
-      "pv",
-      0
-    ),
-    queryNumberWithFallback(
-      env,
-      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_DAY_SQL}`,
-      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_DAY_SQL}`,
-      "pv",
-      0
-    ),
-    queryRows(
-      env,
-      `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
-      []
-    ),
-    queryRowsWithFallback(
-      env,
-      `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_MONTH_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
-      `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_MONTH_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
-      []
-    ),
-    queryRowsWithFallback(
-      env,
-      `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_WEEK_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
-      `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_WEEK_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
-      []
-    ),
-    queryRowsWithFallback(
-      env,
-      `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_DAY_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
-      `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_DAY_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
-      []
-    ),
-  ]);
+      queryNumber(env, `SELECT SUM(double1) AS pv FROM ${TABLE}`, [], "pv", 0),
+      queryNumberWithFallback(
+        env,
+        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_MONTH_SQL}`,
+        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_MONTH_SQL}`,
+        "pv",
+        0
+      ),
+      queryNumberWithFallback(
+        env,
+        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_WEEK_SQL}`,
+        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_WEEK_SQL}`,
+        "pv",
+        0
+      ),
+      queryNumberWithFallback(
+        env,
+        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_DAY_SQL}`,
+        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_DAY_SQL}`,
+        "pv",
+        0
+      ),
+      queryRows(
+        env,
+        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+        []
+      ),
+      queryRowsWithFallback(
+        env,
+        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_MONTH_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_MONTH_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+        []
+      ),
+      queryRowsWithFallback(
+        env,
+        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_WEEK_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_WEEK_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+        []
+      ),
+      queryRowsWithFallback(
+        env,
+        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_DAY_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_DAY_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+        []
+      ),
+    ]);
+
+  const debugRows = debugEnabled
+    ? await queryRows(
+        env,
+        `SELECT min(timestamp) AS min_ts, max(timestamp) AS max_ts, COUNT() AS total_rows FROM ${TABLE}`,
+        []
+      )
+    : null;
+  const debugSummary = debugRows && debugRows.length ? debugRows[0] : null;
 
   return jsonResponse({
     summary: {
@@ -236,6 +247,20 @@ export async function onRequestGet({ env }) {
       week: normalizePages(pagesWeek),
       day: normalizePages(pagesDay),
     },
+    ...(debugEnabled
+      ? {
+          debug: {
+            now: new Date().toISOString(),
+            pageCounts: {
+              total: pagesTotal.length,
+              month: pagesMonth.length,
+              week: pagesWeek.length,
+              day: pagesDay.length,
+            },
+            dataRange: debugSummary,
+          },
+        }
+      : {}),
     updatedAt: new Date().toISOString(),
   });
 }
