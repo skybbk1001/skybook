@@ -73,8 +73,6 @@ document.addEventListener('DOMContentLoaded', async function () {
       fetchJson('/content.json')
     ]);
 
-    renderSummary(summaryEl, rankData && rankData.summary);
-
     const posts = extractPosts(contentData);
     const postMap = new Map();
     posts.forEach(post => {
@@ -82,6 +80,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
 
     const pagesByRange = normalizePagesByRange(rankData && rankData.pages);
+    const postPagesByRange = buildPostPagesByRange(pagesByRange, postMap);
+    renderSummary(summaryEl, buildPostSummary(postPagesByRange));
 
     const rangeCards = summaryEl
       ? Array.from(summaryEl.querySelectorAll('.rank-card[data-range]'))
@@ -91,7 +91,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     const renderList = () => {
       updateActiveRange(rangeCards, state.range);
 
-      const ranked = buildRanked(pagesByRange[state.range] || [], postMap);
+      const ranked = buildRanked(postPagesByRange[state.range] || []);
       if (!ranked.length) {
         listEl.innerHTML = '<p>暂无排行数据。</p>';
         return;
@@ -178,15 +178,45 @@ function normalizePagesByRange(pages) {
   return result;
 }
 
-function buildRanked(pages, postMap) {
+function buildPostPagesByRange(pagesByRange, postMap) {
+  const result = { total: [], month: [], week: [], day: [] };
+  Object.keys(result).forEach(range => {
+    const pages = (pagesByRange && pagesByRange[range]) || [];
+    result[range] = (pages || [])
+      .map(item => {
+        const path = normalizePath(item.path || item.index1 || '');
+        if (!path || path === '/') return null;
+        const post = findPostByPath(postMap, path);
+        if (!post) return null;
+        return {
+          path,
+          pv: Number(item.pv) || 0,
+          post
+        };
+      })
+      .filter(Boolean);
+  });
+  return result;
+}
+
+function buildPostSummary(postPagesByRange) {
+  const sumPv = (items) =>
+    (items || []).reduce((sum, item) => sum + (Number(item.pv) || 0), 0);
+  return {
+    total: sumPv(postPagesByRange.total),
+    month: sumPv(postPagesByRange.month),
+    week: sumPv(postPagesByRange.week),
+    day: sumPv(postPagesByRange.day)
+  };
+}
+
+function buildRanked(pages) {
   return (pages || [])
     .map(item => {
-      const path = normalizePath(item.path || item.index1 || '');
-      if (!path || path === '/') return null;
-      const post = findPostByPath(postMap, path);
+      const post = item.post;
       if (!post) return null;
       return {
-        path,
+        path: item.path,
         pv: Number(item.pv) || 0,
         title: post.title || '无标题',
         author: post.author || '未知',
@@ -195,7 +225,7 @@ function buildRanked(pages, postMap) {
     })
     .filter(Boolean)
     .sort((a, b) => b.pv - a.pv)
-    .slice(0, 50);
+    .slice(0, 20);
 }
 
 function updateActiveRange(cards, range) {
