@@ -1,14 +1,25 @@
 const TABLE = "ANALYTICS";
 const LIMIT = 200;
-const JSON_HEADERS = {
+const BASE_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
 };
 
+function corsHeaders() {
+  return {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET, OPTIONS",
+    "access-control-allow-headers": "content-type, x-requested-with",
+  };
+}
+
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: JSON_HEADERS,
+    headers: {
+      ...BASE_HEADERS,
+      ...corsHeaders(),
+    },
   });
 }
 
@@ -129,7 +140,15 @@ function formatUtcDate(date) {
   return date.toISOString().slice(0, 19).replace("T", " ");
 }
 
-export async function onRequestGet({ env }) {
+export async function onRequestGet({ request, env }) {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        ...corsHeaders(),
+      },
+    });
+  }
   const now = new Date();
   const dayStart = new Date(now.getTime() - ROLLING_DAY_MS);
   const weekStart = new Date(now.getTime() - ROLLING_WEEK_MS);

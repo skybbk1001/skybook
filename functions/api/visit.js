@@ -1,14 +1,25 @@
 const TABLE = "ANALYTICS";
 const PATH_WHERE = "blob2 IS NOT NULL AND blob2 != ''";
-const JSON_HEADERS = {
+const BASE_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
 };
 
+function corsHeaders() {
+  return {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET, OPTIONS",
+    "access-control-allow-headers": "content-type, x-requested-with",
+  };
+}
+
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: JSON_HEADERS,
+    headers: {
+      ...BASE_HEADERS,
+      ...corsHeaders(),
+    },
   });
 }
 
@@ -162,6 +173,14 @@ async function recordPageView(env, pageHash, path, visitorId) {
 }
 
 export async function onRequestGet({ request, env }) {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        ...corsHeaders(),
+      },
+    });
+  }
   if (!env.ANALYTICS) {
     return jsonResponse({ error: "Missing ANALYTICS binding." }, 500);
   }

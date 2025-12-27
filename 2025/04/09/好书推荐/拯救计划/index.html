@@ -14,7 +14,7 @@
 
 <script>Theme.counter = {
   register: function() {
-    request("/api/visit" + '/?page=' + encodeURIComponent(window.location.pathname), {
+    request("https://skybook.pages.dev/api/visit" + '/?page=' + encodeURIComponent(window.location.pathname), {
       method: "GET"
     })
       .then(counter => {

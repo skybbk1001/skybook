@@ -10,7 +10,7 @@
 
 <script>Theme.counter = {
   register: function() {
-    request("/api/visit" + '/?page=' + encodeURIComponent(window.location.pathname), {
+    request("https://skybook.pages.dev/api/visit" + '/?page=' + encodeURIComponent(window.location.pathname), {
       method: "GET"
     })
       .then(counter => {
@@ -64,6 +64,7 @@
 
 <script>
 const RANGES = ['total', 'month', 'week', 'day'];
+const RANK_API = 'https://skybook.pages.dev/api/rank';
 
 document.addEventListener('DOMContentLoaded', async function () {
   const summaryEl = document.getElementById('rank-summary');
@@ -71,7 +72,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
   try {
     const [rankData, contentData] = await Promise.all([
-      fetchJson('/api/rank'),
+      fetchJson(RANK_API),
       fetchJson('/content.json')
     ]);
 
