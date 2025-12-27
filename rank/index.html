@@ -109,7 +109,6 @@ document.addEventListener('DOMContentLoaded', async function () {
         const countText = formatNumber(item.pv);
         const metaParts = [];
         if (safeAuthor) metaParts.push(safeAuthor);
-        if (safeDate) metaParts.push(safeDate);
         if (countText) metaParts.push(countText)
         const metaText = metaParts.length ? ` · ${metaParts.join(' · ')}` : '';
         const permalink = item.path;
