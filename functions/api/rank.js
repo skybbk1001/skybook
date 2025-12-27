@@ -77,12 +77,9 @@ function normalizePath(input) {
   return path;
 }
 
-const CALENDAR_DAY_SQL = `timestamp >= toStartOfDay(now() + INTERVAL 8 HOUR) - INTERVAL 8 HOUR`;
-const CALENDAR_WEEK_SQL = `timestamp >= toStartOfWeek(now() + INTERVAL 8 HOUR, 1) - INTERVAL 8 HOUR`;
-const CALENDAR_MONTH_SQL = `timestamp >= toStartOfMonth(now() + INTERVAL 8 HOUR) - INTERVAL 8 HOUR`;
-const ROLLING_DAY_SQL = `timestamp >= now() - INTERVAL 1 DAY`;
-const ROLLING_WEEK_SQL = `timestamp >= now() - INTERVAL 7 DAY`;
-const ROLLING_MONTH_SQL = `timestamp >= now() - INTERVAL 30 DAY`;
+const ROLLING_DAY_MS = 24 * 60 * 60 * 1000;
+const ROLLING_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const ROLLING_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 
 function unwrapRows(result) {
   if (!result) return [];
@@ -113,28 +110,6 @@ async function queryNumber(env, sql, params, key, fallback = 0) {
   }
 }
 
-async function queryNumberWithFallback(
-  env,
-  primarySql,
-  fallbackSql,
-  key,
-  fallbackValue = 0
-) {
-  try {
-    const result = await runSqlApi(env, primarySql, []);
-    return getNumber(unwrapRows(result), key);
-  } catch (err) {
-    console.error("Analytics query failed:", err);
-    try {
-      const result = await runSqlApi(env, fallbackSql, []);
-      return getNumber(unwrapRows(result), key);
-    } catch (inner) {
-      console.error("Analytics query fallback failed:", inner);
-      return fallbackValue;
-    }
-  }
-}
-
 async function queryRows(env, sql, params) {
   try {
     const result = await runSqlApi(env, sql, params);
@@ -142,22 +117,6 @@ async function queryRows(env, sql, params) {
   } catch (err) {
     console.error("Analytics query failed:", err);
     return [];
-  }
-}
-
-async function queryRowsWithFallback(env, primarySql, fallbackSql, params) {
-  try {
-    const result = await runSqlApi(env, primarySql, params);
-    return unwrapRows(result);
-  } catch (err) {
-    console.error("Analytics query failed:", err);
-    try {
-      const result = await runSqlApi(env, fallbackSql, params);
-      return unwrapRows(result);
-    } catch (inner) {
-      console.error("Analytics query fallback failed:", inner);
-      return [];
-    }
   }
 }
 
@@ -173,29 +132,41 @@ function normalizePages(pages) {
     .filter((item) => item.path && item.path !== "/");
 }
 
+function formatUtcDate(date) {
+  return date.toISOString().slice(0, 19).replace("T", " ");
+}
+
 export async function onRequestGet({ env, request }) {
   const debugEnabled =
     request && new URL(request.url).searchParams.get("debug") === "1";
+  const now = new Date();
+  const dayStart = new Date(now.getTime() - ROLLING_DAY_MS);
+  const weekStart = new Date(now.getTime() - ROLLING_WEEK_MS);
+  const monthStart = new Date(now.getTime() - ROLLING_MONTH_MS);
+  const daySql = `timestamp >= toDateTime('${formatUtcDate(dayStart)}')`;
+  const weekSql = `timestamp >= toDateTime('${formatUtcDate(weekStart)}')`;
+  const monthSql = `timestamp >= toDateTime('${formatUtcDate(monthStart)}')`;
+
   const [total, month, week, day, pagesTotal, pagesMonth, pagesWeek, pagesDay] =
     await Promise.all([
       queryNumber(env, `SELECT SUM(double1) AS pv FROM ${TABLE}`, [], "pv", 0),
       queryNumber(
         env,
-        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_MONTH_SQL}`,
+        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${monthSql}`,
         [],
         "pv",
         0
       ),
       queryNumber(
         env,
-        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_WEEK_SQL}`,
+        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${weekSql}`,
         [],
         "pv",
         0
       ),
       queryNumber(
         env,
-        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_DAY_SQL}`,
+        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${daySql}`,
         [],
         "pv",
         0
@@ -207,17 +178,17 @@ export async function onRequestGet({ env, request }) {
       ),
       queryRows(
         env,
-        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_MONTH_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${monthSql} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
         []
       ),
       queryRows(
         env,
-        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_WEEK_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${weekSql} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
         []
       ),
       queryRows(
         env,
-        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_DAY_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${daySql} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
         []
       ),
     ]);
@@ -248,6 +219,11 @@ export async function onRequestGet({ env, request }) {
       ? {
           debug: {
             now: new Date().toISOString(),
+            ranges: {
+              monthStart: formatUtcDate(monthStart),
+              weekStart: formatUtcDate(weekStart),
+              dayStart: formatUtcDate(dayStart),
+            },
             pageCounts: {
               total: pagesTotal.length,
               month: pagesMonth.length,
