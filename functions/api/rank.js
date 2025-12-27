@@ -145,8 +145,37 @@ async function queryRows(env, sql, params) {
   }
 }
 
+async function queryRowsWithFallback(env, primarySql, fallbackSql, params) {
+  try {
+    const result = await runSqlApi(env, primarySql, params);
+    return unwrapRows(result);
+  } catch (err) {
+    console.error("Analytics query failed:", err);
+    try {
+      const result = await runSqlApi(env, fallbackSql, params);
+      return unwrapRows(result);
+    } catch (inner) {
+      console.error("Analytics query fallback failed:", inner);
+      return [];
+    }
+  }
+}
+
+function normalizePages(pages) {
+  return (pages || [])
+    .map((item) => {
+      const path = normalizePath(item.path || item.index1 || "");
+      return {
+        path,
+        pv: Number(item.pv) || 0,
+      };
+    })
+    .filter((item) => item.path && item.path !== "/");
+}
+
 export async function onRequestGet({ env }) {
-  const [total, month, week, day, pages] = await Promise.all([
+  const [total, month, week, day, pagesTotal, pagesMonth, pagesWeek, pagesDay] =
+    await Promise.all([
     queryNumber(env, `SELECT SUM(double1) AS pv FROM ${TABLE}`, [], "pv", 0),
     queryNumberWithFallback(
       env,
@@ -174,17 +203,25 @@ export async function onRequestGet({ env }) {
       `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
       []
     ),
+    queryRowsWithFallback(
+      env,
+      `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_MONTH_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+      `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_MONTH_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+      []
+    ),
+    queryRowsWithFallback(
+      env,
+      `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_WEEK_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+      `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_WEEK_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+      []
+    ),
+    queryRowsWithFallback(
+      env,
+      `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${CALENDAR_DAY_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+      `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${ROLLING_DAY_SQL} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+      []
+    ),
   ]);
-
-  const normalizedPages = pages
-    .map((item) => {
-      const path = normalizePath(item.path || item.index1 || "");
-      return {
-        path,
-        pv: Number(item.pv) || 0,
-      };
-    })
-    .filter((item) => item.path && item.path !== "/");
 
   return jsonResponse({
     summary: {
@@ -193,7 +230,12 @@ export async function onRequestGet({ env }) {
       week,
       day,
     },
-    pages: normalizedPages,
+    pages: {
+      total: normalizePages(pagesTotal),
+      month: normalizePages(pagesMonth),
+      week: normalizePages(pagesWeek),
+      day: normalizePages(pagesDay),
+    },
     updatedAt: new Date().toISOString(),
   });
 }

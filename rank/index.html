@@ -40,19 +40,19 @@
 <i class="icon icon-search"></i></div></div></div><div class="main"><div class="about"><div id="site-rank">
   <h2>阅读排行</h2>
   <div id="rank-summary" class="rank-summary">
-    <div class="rank-card">
+    <div class="rank-card" data-range="total">
       <div class="label">总阅读量</div>
       <div class="value" data-key="total">-</div>
     </div>
-    <div class="rank-card">
+    <div class="rank-card" data-range="month">
       <div class="label">本月阅读量</div>
       <div class="value" data-key="month">-</div>
     </div>
-    <div class="rank-card">
+    <div class="rank-card" data-range="week">
       <div class="label">本周阅读量</div>
       <div class="value" data-key="week">-</div>
     </div>
-    <div class="rank-card">
+    <div class="rank-card" data-range="day">
       <div class="label">今日阅读量</div>
       <div class="value" data-key="day">-</div>
     </div>
@@ -75,56 +75,62 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     renderSummary(summaryEl, rankData && rankData.summary);
 
-    const posts = extractPosts(contentData)
+    const posts = extractPosts(contentData);
     const postMap = new Map();
     posts.forEach(post => {
       addPathVariants(postMap, post.path || '', post);
     });
 
-    const ranked = (rankData.pages || [])
-      .map(item => {
-        const path = normalizePath(item.path || '');
-        const post = findPostByPath(postMap, path);
-        if (!post) return null;
-        return {
-          path,
-          pv: Number(item.pv) || 0,
-          title: post.title || '无标题',
-          author: post.author || '未知',
-          date: post.date || ''
-        };
-      })
-      .filter(Boolean)
-      .sort((a, b) => b.pv - a.pv)
-      .slice(0, 50);
+    const pagesByRange = normalizePagesByRange(rankData && rankData.pages);
 
-    if (!ranked.length) {
-      listEl.innerHTML = '<p>暂无排行数据。</p>';
-      return;
-    }
+    const rangeCards = summaryEl
+      ? Array.from(summaryEl.querySelectorAll('.rank-card[data-range]'))
+      : [];
+    const state = { range: 'total' };
 
-    listEl.innerHTML = '';
-    ranked.forEach((item, index) => {
-      const safeTitle = escapeHtml(item.title);
-      const safeAuthor = escapeHtml(item.author);
-      const safeDate = formatDate(item.date);
-      const metaParts = [];
-      if (safeAuthor) metaParts.push(safeAuthor);
-      if (safeDate) metaParts.push(safeDate);
-      const metaText = metaParts.length ? ` · ${metaParts.join(' · ')}` : '';
-      const permalink = item.path;
-      const countText = formatNumber(item.pv);
+    const renderList = () => {
+      updateActiveRange(rangeCards, state.range);
 
-      listEl.insertAdjacentHTML('beforeend', `
-        <div class="activity-item">
-          <div class="activity-time">#${index + 1} · <span class="rank-count">${countText}</span> 次</div>
-          <div class="activity-content">
-            <i class="fas fa-fire"></i>
-            <span class="activity-text"><a href="${permalink}">${safeTitle}</a><span class="rank-meta">${metaText}</span></span>
+      const ranked = buildRanked(pagesByRange[state.range] || [], postMap);
+      if (!ranked.length) {
+        listEl.innerHTML = '<p>暂无排行数据。</p>';
+        return;
+      }
+
+      listEl.innerHTML = '';
+      ranked.forEach((item, index) => {
+        const safeTitle = escapeHtml(item.title);
+        const safeAuthor = escapeHtml(item.author);
+        const safeDate = formatDate(item.date);
+        const metaParts = [];
+        if (safeAuthor) metaParts.push(safeAuthor);
+        if (safeDate) metaParts.push(safeDate);
+        const metaText = metaParts.length ? ` · ${metaParts.join(' · ')}` : '';
+        const permalink = item.path;
+        const countText = formatNumber(item.pv);
+
+        listEl.insertAdjacentHTML('beforeend', `
+          <div class="activity-item">
+            <div class="activity-time">#${index + 1} · <span class="rank-count">${countText}</span> 次</div>
+            <div class="activity-content">
+              <i class="fas fa-fire"></i>
+              <span class="activity-text"><a href="${permalink}">${safeTitle}</a><span class="rank-meta">${metaText}</span></span>
+            </div>
           </div>
-        </div>
-      `);
+        `);
+      });
+    };
+
+    rangeCards.forEach(card => {
+      card.addEventListener('click', () => {
+        const range = card.getAttribute('data-range');
+        if (!range || range === state.range) return;
+        state.range = range;
+        renderList();
+      });
     });
+
+    renderList();
   } catch (err) {
     console.error('加载排行失败:', err);
     listEl.innerHTML = '<p>加载排行失败，请稍后重试。</p>';
@@ -159,6 +165,45 @@ function extractPosts(data) {
   return [];
 }
 
+function normalizePagesByRange(pages) {
+  const result = { total: [], month: [], week: [], day: [] };
+  if (Array.isArray(pages)) {
+    result.total = pages;
+    return result;
+  }
+  if (!pages || typeof pages !== 'object') return result;
+  Object.keys(result).forEach(key => {
+    result[key] = Array.isArray(pages[key]) ? pages[key] : [];
+  });
+  return result;
+}
+
+function buildRanked(pages, postMap) {
+  return (pages || [])
+    .map(item => {
+      const path = normalizePath(item.path || item.index1 || '');
+      if (!path || path === '/') return null;
+      const post = findPostByPath(postMap, path);
+      if (!post) return null;
+      return {
+        path,
+        pv: Number(item.pv) || 0,
+        title: post.title || '无标题',
+        author: post.author || '未知',
+        date: post.date || ''
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.pv - a.pv)
+    .slice(0, 50);
+}
+
+function updateActiveRange(cards, range) {
+  (cards || []).forEach(card => {
+    card.classList.toggle('is-active', card.getAttribute('data-range') === range);
+  });
+}
+
 function normalizePath(input) {
   let path = (input || '').trim();
   if (!path) return '/';
@@ -169,7 +214,7 @@ function normalizePath(input) {
   return path;
 }
 
-function addPathVariants(map, rawPath, post) {
+function addPathVariants(map, rawPath, value) {
   const normalized = normalizePath(rawPath || '');
   if (!normalized) return;
   const variants = new Set();
@@ -197,7 +242,7 @@ function addPathVariants(map, rawPath, post) {
 
   variants.forEach(key => {
     if (key) {
-      map.set(key, post);
+      map.set(key, value);
     }
   });
 }
@@ -287,6 +332,18 @@ function escapeHtml(value) {
   border-radius: 12px;
   padding: 0.9em 1em;
   text-align: center;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.rank-card:hover {
+  transform: translateY(-2px);
+  border-color: #444;
+}
+
+.rank-card.is-active {
+  border-color: #79b8ff;
+  box-shadow: 0 0 0 1px rgba(121, 184, 255, 0.35);
 }
 
 .rank-card .label {
