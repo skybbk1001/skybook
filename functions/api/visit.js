@@ -173,14 +173,6 @@ async function recordPageView(env, pageHash, path, visitorId) {
 }
 
 export async function onRequestGet({ request, env }) {
-  if (request.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        ...corsHeaders(),
-      },
-    });
-  }
   if (!env.ANALYTICS) {
     return jsonResponse({ error: "Missing ANALYTICS binding." }, 500);
   }
@@ -222,6 +214,15 @@ export async function onRequestGet({ request, env }) {
     page_pv: pagePv,
     site_pv: sitePv,
     site_uv: siteUv,
+  });
+}
+
+export async function onRequestOptions() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      ...corsHeaders(),
+    },
   });
 }
 

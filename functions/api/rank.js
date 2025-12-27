@@ -140,15 +140,7 @@ function formatUtcDate(date) {
   return date.toISOString().slice(0, 19).replace("T", " ");
 }
 
-export async function onRequestGet({ request, env }) {
-  if (request.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        ...corsHeaders(),
-      },
-    });
-  }
+export async function onRequestGet({ env }) {
   const now = new Date();
   const dayStart = new Date(now.getTime() - ROLLING_DAY_MS);
   const weekStart = new Date(now.getTime() - ROLLING_WEEK_MS);
@@ -215,5 +207,14 @@ export async function onRequestGet({ request, env }) {
       day: normalizePages(pagesDay),
     },
     updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function onRequestOptions() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      ...corsHeaders(),
+    },
   });
 }
