@@ -70,6 +70,11 @@ async function runSqlApi(env, sql, params = []) {
 function normalizePath(input) {
   let path = (input || "").trim();
   if (!path) return "/";
+  try {
+    path = encodeURI(decodeURI(path));
+  } catch (err) {
+    path = encodeURI(path);
+  }
   if (!path.startsWith("/")) path = `/${path}`;
   path = path.replace(/\/{2,}/g, "/");
   const hasExt = /\.[a-zA-Z0-9]+$/.test(path);
@@ -136,9 +141,7 @@ function formatUtcDate(date) {
   return date.toISOString().slice(0, 19).replace("T", " ");
 }
 
-export async function onRequestGet({ env, request }) {
-  const debugEnabled =
-    request && new URL(request.url).searchParams.get("debug") === "1";
+export async function onRequestGet({ env }) {
   const now = new Date();
   const dayStart = new Date(now.getTime() - ROLLING_DAY_MS);
   const weekStart = new Date(now.getTime() - ROLLING_WEEK_MS);
@@ -193,15 +196,6 @@ export async function onRequestGet({ env, request }) {
       ),
     ]);
 
-  const debugRows = debugEnabled
-    ? await queryRows(
-        env,
-        `SELECT min(timestamp) AS min_ts, max(timestamp) AS max_ts, COUNT() AS total_rows FROM ${TABLE}`,
-        []
-      )
-    : null;
-  const debugSummary = debugRows && debugRows.length ? debugRows[0] : null;
-
   return jsonResponse({
     summary: {
       total,
@@ -215,25 +209,6 @@ export async function onRequestGet({ env, request }) {
       week: normalizePages(pagesWeek),
       day: normalizePages(pagesDay),
     },
-    ...(debugEnabled
-      ? {
-          debug: {
-            now: new Date().toISOString(),
-            ranges: {
-              monthStart: formatUtcDate(monthStart),
-              weekStart: formatUtcDate(weekStart),
-              dayStart: formatUtcDate(dayStart),
-            },
-            pageCounts: {
-              total: pagesTotal.length,
-              month: pagesMonth.length,
-              week: pagesWeek.length,
-              day: pagesDay.length,
-            },
-            dataRange: debugSummary,
-          },
-        }
-      : {}),
     updatedAt: new Date().toISOString(),
   });
 }

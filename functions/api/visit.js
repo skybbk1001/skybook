@@ -69,6 +69,11 @@ async function runSqlApi(env, sql, params = []) {
 function normalizePath(input) {
   let path = (input || "").trim();
   if (!path) return "/";
+  try {
+    path = encodeURI(decodeURI(path));
+  } catch (err) {
+    path = encodeURI(path);
+  }
   if (!path.startsWith("/")) path = `/${path}`;
   path = path.replace(/\/{2,}/g, "/");
   const hasExt = /\.[a-zA-Z0-9]+$/.test(path);
@@ -77,9 +82,24 @@ function normalizePath(input) {
 }
 
 function resolvePath(pageParam, baseUrl) {
-  if (!pageParam) return "/";
+  const raw = (pageParam || "").trim();
+  if (!raw) return "/";
+  let decoded = raw;
+  for (let i = 0; i < 2; i++) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    } catch (err) {
+      break;
+    }
+  }
   try {
-    return new URL(pageParam, baseUrl).pathname || "/";
+    if (/^https?:\/\//i.test(decoded)) {
+      return new URL(decoded).pathname || "/";
+    }
+    if (decoded.startsWith("/")) return decoded;
+    return new URL(decoded, baseUrl).pathname || "/";
   } catch (err) {
     return "/";
   }
