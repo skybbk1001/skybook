@@ -19,32 +19,19 @@ function getSqlApiConfig(env) {
   return { accountId, apiToken };
 }
 
-function formatSqlValue(value) {
-  if (value === null || value === undefined) return "NULL";
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return `'${String(value).replace(/'/g, "''")}'`;
-}
-
-function formatSqlWithParams(sql, params = []) {
-  if (!params.length) return sql;
-  let index = 0;
-  return sql.replace(/\?/g, () => formatSqlValue(params[index++]));
-}
-
-async function runSqlApi(env, sql, params = []) {
+async function runSqlApi(env, sql) {
   const config = getSqlApiConfig(env);
   if (!config) {
     throw new Error("Missing Analytics Engine SQL API credentials.");
   }
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${config.accountId}/analytics_engine/sql`;
-  const finalSql = formatSqlWithParams(sql, params);
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
       authorization: `Bearer ${config.apiToken}`,
       "content-type": "text/plain; charset=utf-8",
     },
-    body: finalSql,
+    body: sql,
   });
   if (!response.ok) {
     const text = await response.text();
@@ -106,9 +93,9 @@ function getNumber(rows, key) {
   return Number.isFinite(numberValue) ? numberValue : 0;
 }
 
-async function queryNumber(env, sql, params, key, fallback = 0) {
+async function queryNumber(env, sql, key, fallback = 0) {
   try {
-    const result = await runSqlApi(env, sql, params);
+    const result = await runSqlApi(env, sql);
     return getNumber(unwrapRows(result), key);
   } catch (err) {
     console.error("Analytics query failed:", err);
@@ -116,9 +103,9 @@ async function queryNumber(env, sql, params, key, fallback = 0) {
   }
 }
 
-async function queryRows(env, sql, params) {
+async function queryRows(env, sql) {
   try {
-    const result = await runSqlApi(env, sql, params);
+    const result = await runSqlApi(env, sql);
     return unwrapRows(result);
   } catch (err) {
     console.error("Analytics query failed:", err);
@@ -129,7 +116,7 @@ async function queryRows(env, sql, params) {
 function normalizePages(pages) {
   return (pages || [])
     .map((item) => {
-      const path = normalizePath(item.path || item.index1 || "");
+      const path = normalizePath(item.path || "");
       return {
         path,
         pv: Number(item.pv) || 0,
@@ -156,50 +143,42 @@ export async function onRequestGet({ env }) {
       queryNumber(
         env,
         `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${PATH_WHERE}`,
-        [],
         "pv",
         0
       ),
       queryNumber(
         env,
         `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${monthSql} AND ${PATH_WHERE}`,
-        [],
         "pv",
         0
       ),
       queryNumber(
         env,
         `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${weekSql} AND ${PATH_WHERE}`,
-        [],
         "pv",
         0
       ),
       queryNumber(
         env,
         `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${daySql} AND ${PATH_WHERE}`,
-        [],
         "pv",
         0
       ),
       queryRows(
         env,
-        `SELECT blob2 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${PATH_WHERE} GROUP BY blob2 ORDER BY pv DESC LIMIT ${LIMIT}`,
-        []
+        `SELECT blob2 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${PATH_WHERE} GROUP BY blob2 ORDER BY pv DESC LIMIT ${LIMIT}`
       ),
       queryRows(
         env,
-        `SELECT blob2 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${monthSql} AND ${PATH_WHERE} GROUP BY blob2 ORDER BY pv DESC LIMIT ${LIMIT}`,
-        []
+        `SELECT blob2 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${monthSql} AND ${PATH_WHERE} GROUP BY blob2 ORDER BY pv DESC LIMIT ${LIMIT}`
       ),
       queryRows(
         env,
-        `SELECT blob2 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${weekSql} AND ${PATH_WHERE} GROUP BY blob2 ORDER BY pv DESC LIMIT ${LIMIT}`,
-        []
+        `SELECT blob2 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${weekSql} AND ${PATH_WHERE} GROUP BY blob2 ORDER BY pv DESC LIMIT ${LIMIT}`
       ),
       queryRows(
         env,
-        `SELECT blob2 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${daySql} AND ${PATH_WHERE} GROUP BY blob2 ORDER BY pv DESC LIMIT ${LIMIT}`,
-        []
+        `SELECT blob2 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${daySql} AND ${PATH_WHERE} GROUP BY blob2 ORDER BY pv DESC LIMIT ${LIMIT}`
       ),
     ]);
 

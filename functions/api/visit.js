@@ -1,4 +1,5 @@
 const TABLE = "ANALYTICS";
+const PATH_WHERE = "blob2 IS NOT NULL AND blob2 != ''";
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
@@ -173,7 +174,6 @@ export async function onRequestGet({ request, env }) {
   const pageHash = await sha256Hex(pagePath);
   await recordPageView(env, pageHash, pagePath, visitorId);
 
-  const hasPathSql = "blob2 IS NOT NULL AND blob2 != ''";
   const [pagePv, sitePv] = await Promise.all([
     queryNumber(
       env,
@@ -184,7 +184,7 @@ export async function onRequestGet({ request, env }) {
     ),
     queryNumber(
       env,
-      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${hasPathSql}`,
+      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${PATH_WHERE}`,
       [],
       "pv",
       0
@@ -193,7 +193,7 @@ export async function onRequestGet({ request, env }) {
 
   const siteUv = await queryNumber(
     env,
-    `SELECT COUNT(DISTINCT blob1) AS uv FROM ${TABLE} WHERE ${hasPathSql}`,
+    `SELECT COUNT(DISTINCT blob1) AS uv FROM ${TABLE} WHERE ${PATH_WHERE}`,
     [],
     "uv",
     sitePv

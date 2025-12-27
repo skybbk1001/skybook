@@ -63,6 +63,8 @@
 </div>
 
 <script>
+const RANGES = ['total', 'month', 'week', 'day'];
+
 document.addEventListener('DOMContentLoaded', async function () {
   const summaryEl = document.getElementById('rank-summary');
   const listEl = document.getElementById('rank-container');
@@ -76,7 +78,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     const posts = extractPosts(contentData);
     const postMap = new Map();
     posts.forEach(post => {
-      addPathVariants(postMap, post.path || '', post);
+      const path = normalizePath(post.path || '');
+      if (path) postMap.set(path, post);
     });
 
     const pagesByRange = normalizePagesByRange(rankData && rankData.pages);
@@ -166,27 +169,27 @@ function extractPosts(data) {
 }
 
 function normalizePagesByRange(pages) {
-  const result = { total: [], month: [], week: [], day: [] };
+  const result = Object.fromEntries(RANGES.map(range => [range, []]));
   if (Array.isArray(pages)) {
     result.total = pages;
     return result;
   }
   if (!pages || typeof pages !== 'object') return result;
-  Object.keys(result).forEach(key => {
-    result[key] = Array.isArray(pages[key]) ? pages[key] : [];
+  RANGES.forEach(range => {
+    result[range] = Array.isArray(pages[range]) ? pages[range] : [];
   });
   return result;
 }
 
 function buildPostPagesByRange(pagesByRange, postMap) {
-  const result = { total: [], month: [], week: [], day: [] };
-  Object.keys(result).forEach(range => {
+  const result = Object.fromEntries(RANGES.map(range => [range, []]));
+  RANGES.forEach(range => {
     const pages = (pagesByRange && pagesByRange[range]) || [];
     result[range] = (pages || [])
       .map(item => {
-        const path = normalizePath(item.path || item.index1 || '');
+        const path = normalizePath(item.path || '');
         if (!path || path === '/') return null;
-        const post = findPostByPath(postMap, path);
+        const post = postMap.get(path);
         if (!post) return null;
         return {
           path,
@@ -224,7 +227,6 @@ function buildRanked(pages) {
       };
     })
     .filter(Boolean)
-    .sort((a, b) => b.pv - a.pv)
     .slice(0, 20);
 }
 
@@ -237,77 +239,16 @@ function updateActiveRange(cards, range) {
 function normalizePath(input) {
   let path = (input || '').trim();
   if (!path) return '/';
+  try {
+    path = encodeURI(decodeURI(path));
+  } catch (err) {
+    path = encodeURI(path);
+  }
   if (!path.startsWith('/')) path = `/${path}`;
   path = path.replace(/\/{2,}/g, '/');
   const hasExt = /\.[a-zA-Z0-9]+$/.test(path);
   if (path !== '/' && !hasExt && !path.endsWith('/')) path += '/';
   return path;
-}
-
-function addPathVariants(map, rawPath, value) {
-  const normalized = normalizePath(rawPath || '');
-  if (!normalized) return;
-  const variants = new Set();
-  const hasExt = /\.[a-zA-Z0-9]+$/.test(normalized);
-
-  variants.add(normalized);
-  variants.add(encodeURI(normalized));
-
-  if (normalized.endsWith('/')) {
-    const withoutSlash = normalized.slice(0, -1);
-    if (withoutSlash) {
-      variants.add(withoutSlash);
-      variants.add(encodeURI(withoutSlash));
-    }
-    variants.add(`${normalized}index.html`);
-    variants.add(encodeURI(`${normalized}index.html`));
-  } else {
-    variants.add(`${normalized}/`);
-    variants.add(encodeURI(`${normalized}/`));
-    if (!hasExt) {
-      variants.add(`${normalized}.html`);
-      variants.add(encodeURI(`${normalized}.html`));
-    }
-  }
-
-  variants.forEach(key => {
-    if (key) {
-      map.set(key, value);
-    }
-  });
-}
-
-function findPostByPath(map, rawPath) {
-  const normalized = normalizePath(rawPath || '');
-  const candidates = [
-    normalized,
-    encodeURI(normalized),
-    normalized.endsWith('/') ? normalized.slice(0, -1) : `${normalized}/`,
-    normalized.endsWith('/')
-      ? `${normalized}index.html`
-      : /\.[a-zA-Z0-9]+$/.test(normalized)
-      ? normalized
-      : `${normalized}.html`
-  ];
-
-  for (const key of candidates) {
-    if (map.has(key)) {
-      return map.get(key);
-    }
-    const decoded = safeDecode(key);
-    if (decoded && map.has(decoded)) {
-      return map.get(decoded);
-    }
-  }
-  return null;
-}
-
-function safeDecode(value) {
-  try {
-    return decodeURI(value);
-  } catch (err) {
-    return value;
-  }
 }
 
 function formatNumber(value) {
