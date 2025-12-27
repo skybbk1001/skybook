@@ -85,7 +85,7 @@ function normalizePath(input) {
 const ROLLING_DAY_MS = 24 * 60 * 60 * 1000;
 const ROLLING_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const ROLLING_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
-const PATH_KEY = "ifNull(blob2, index1)";
+const PATH_WHERE = "blob2 IS NOT NULL AND blob2 != ''";
 
 function unwrapRows(result) {
   if (!result) return [];
@@ -153,46 +153,52 @@ export async function onRequestGet({ env }) {
 
   const [total, month, week, day, pagesTotal, pagesMonth, pagesWeek, pagesDay] =
     await Promise.all([
-      queryNumber(env, `SELECT SUM(double1) AS pv FROM ${TABLE}`, [], "pv", 0),
       queryNumber(
         env,
-        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${monthSql}`,
+        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${PATH_WHERE}`,
         [],
         "pv",
         0
       ),
       queryNumber(
         env,
-        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${weekSql}`,
+        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${monthSql} AND ${PATH_WHERE}`,
         [],
         "pv",
         0
       ),
       queryNumber(
         env,
-        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${daySql}`,
+        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${weekSql} AND ${PATH_WHERE}`,
+        [],
+        "pv",
+        0
+      ),
+      queryNumber(
+        env,
+        `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${daySql} AND ${PATH_WHERE}`,
         [],
         "pv",
         0
       ),
       queryRows(
         env,
-        `SELECT ${PATH_KEY} AS path, SUM(double1) AS pv FROM ${TABLE} GROUP BY ${PATH_KEY} ORDER BY pv DESC LIMIT ${LIMIT}`,
+        `SELECT blob2 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${PATH_WHERE} GROUP BY blob2 ORDER BY pv DESC LIMIT ${LIMIT}`,
         []
       ),
       queryRows(
         env,
-        `SELECT ${PATH_KEY} AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${monthSql} GROUP BY ${PATH_KEY} ORDER BY pv DESC LIMIT ${LIMIT}`,
+        `SELECT blob2 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${monthSql} AND ${PATH_WHERE} GROUP BY blob2 ORDER BY pv DESC LIMIT ${LIMIT}`,
         []
       ),
       queryRows(
         env,
-        `SELECT ${PATH_KEY} AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${weekSql} GROUP BY ${PATH_KEY} ORDER BY pv DESC LIMIT ${LIMIT}`,
+        `SELECT blob2 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${weekSql} AND ${PATH_WHERE} GROUP BY blob2 ORDER BY pv DESC LIMIT ${LIMIT}`,
         []
       ),
       queryRows(
         env,
-        `SELECT ${PATH_KEY} AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${daySql} GROUP BY ${PATH_KEY} ORDER BY pv DESC LIMIT ${LIMIT}`,
+        `SELECT blob2 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${daySql} AND ${PATH_WHERE} GROUP BY blob2 ORDER BY pv DESC LIMIT ${LIMIT}`,
         []
       ),
     ]);

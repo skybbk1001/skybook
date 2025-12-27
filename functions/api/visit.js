@@ -173,20 +173,27 @@ export async function onRequestGet({ request, env }) {
   const pageHash = await sha256Hex(pagePath);
   await recordPageView(env, pageHash, pagePath, visitorId);
 
+  const hasPathSql = "blob2 IS NOT NULL AND blob2 != ''";
   const [pagePv, sitePv] = await Promise.all([
     queryNumber(
       env,
-      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE index1 IN (?, ?)`,
-      [pageHash, pagePath],
+      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE index1 = ?`,
+      [pageHash],
       "pv",
       0
     ),
-    queryNumber(env, `SELECT SUM(double1) AS pv FROM ${TABLE}`, [], "pv", 0),
+    queryNumber(
+      env,
+      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE ${hasPathSql}`,
+      [],
+      "pv",
+      0
+    ),
   ]);
 
   const siteUv = await queryNumber(
     env,
-    `SELECT COUNT(DISTINCT blob1) AS uv FROM ${TABLE}`,
+    `SELECT COUNT(DISTINCT blob1) AS uv FROM ${TABLE} WHERE ${hasPathSql}`,
     [],
     "uv",
     sitePv
