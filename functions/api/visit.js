@@ -148,11 +148,11 @@ async function queryNumber(env, sql, params, key, fallback = 0) {
   }
 }
 
-async function recordPageView(env, path, visitorId) {
+async function recordPageView(env, pageHash, path, visitorId) {
   try {
     await env.ANALYTICS.writeDataPoint({
-      indexes: [path],
-      blobs: [visitorId],
+      indexes: [pageHash],
+      blobs: [visitorId, path],
       doubles: [1],
     });
   } catch (err) {
@@ -170,13 +170,14 @@ export async function onRequestGet({ request, env }) {
   const pagePath = normalizePath(resolvePath(pageParam, request.url));
 
   const visitorId = await getVisitorId(request);
-  await recordPageView(env, pagePath, visitorId);
+  const pageHash = await sha256Hex(pagePath);
+  await recordPageView(env, pageHash, pagePath, visitorId);
 
   const [pagePv, sitePv] = await Promise.all([
     queryNumber(
       env,
-      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE index1 = ?`,
-      [pagePath],
+      `SELECT SUM(double1) AS pv FROM ${TABLE} WHERE index1 IN (?, ?)`,
+      [pageHash, pagePath],
       "pv",
       0
     ),

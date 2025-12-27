@@ -85,6 +85,7 @@ function normalizePath(input) {
 const ROLLING_DAY_MS = 24 * 60 * 60 * 1000;
 const ROLLING_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const ROLLING_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+const PATH_KEY = "ifNull(blob2, index1)";
 
 function unwrapRows(result) {
   if (!result) return [];
@@ -176,22 +177,22 @@ export async function onRequestGet({ env }) {
       ),
       queryRows(
         env,
-        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+        `SELECT ${PATH_KEY} AS path, SUM(double1) AS pv FROM ${TABLE} GROUP BY ${PATH_KEY} ORDER BY pv DESC LIMIT ${LIMIT}`,
         []
       ),
       queryRows(
         env,
-        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${monthSql} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+        `SELECT ${PATH_KEY} AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${monthSql} GROUP BY ${PATH_KEY} ORDER BY pv DESC LIMIT ${LIMIT}`,
         []
       ),
       queryRows(
         env,
-        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${weekSql} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+        `SELECT ${PATH_KEY} AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${weekSql} GROUP BY ${PATH_KEY} ORDER BY pv DESC LIMIT ${LIMIT}`,
         []
       ),
       queryRows(
         env,
-        `SELECT index1 AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${daySql} GROUP BY index1 ORDER BY pv DESC LIMIT ${LIMIT}`,
+        `SELECT ${PATH_KEY} AS path, SUM(double1) AS pv FROM ${TABLE} WHERE ${daySql} GROUP BY ${PATH_KEY} ORDER BY pv DESC LIMIT ${LIMIT}`,
         []
       ),
     ]);
