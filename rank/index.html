@@ -106,16 +106,16 @@ document.addEventListener('DOMContentLoaded', async function () {
         const safeTitle = escapeHtml(item.title);
         const safeAuthor = escapeHtml(item.author);
         const safeDate = formatDate(item.date);
+        const countText = formatNumber(item.pv);
         const metaParts = [];
         if (safeAuthor) metaParts.push(safeAuthor);
         if (safeDate) metaParts.push(safeDate);
+        if (countText) metaParts.push(countText)
         const metaText = metaParts.length ? ` · ${metaParts.join(' · ')}` : '';
         const permalink = item.path;
-        const countText = formatNumber(item.pv);
 
         listEl.insertAdjacentHTML('beforeend', `
           <div class="activity-item">
-            <div class="activity-time">#${index + 1} · <span class="rank-count">${countText}</span> 次</div>
             <div class="activity-content">
               <i class="fas fa-fire"></i>
               <span class="activity-text"><a href="${permalink}">${safeTitle}</a><span class="rank-meta">${metaText}</span></span>
@@ -342,12 +342,6 @@ function escapeHtml(value) {
 .activity-item:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-}
-
-.activity-time {
-  font-size: 0.85em;
-  color: #888;
-  margin-bottom: 0.5em;
 }
 
 .activity-content {
