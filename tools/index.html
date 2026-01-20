@@ -1,4 +1,4 @@
-<html lang="zh"><head><meta charset="utf-8"/><meta http-equiv="X-UA-Compatible" content="IE=edge"/><meta name="viewport" content="width=device-width, initial-scale=1"/><meta name="description" content="专注于分享自制书源与阅读资源的网站，涵盖小说、文学、科技等多种类型，并保持持续更新；除书源外，还提供订阅源、听书引擎等配套内容，方便用户一站式获取最新最全的开源阅读资源"/><title>关于 - 明月书阁 - 明月照大江发布页</title><link rel="icon" href="/img/favicon.ico"/>
+<html lang="zh"><head><meta charset="utf-8"/><meta http-equiv="X-UA-Compatible" content="IE=edge"/><meta name="viewport" content="width=device-width, initial-scale=1"/><meta name="description" content="专注于分享自制书源与阅读资源的网站，涵盖小说、文学、科技等多种类型，并保持持续更新；除书源外，还提供订阅源、听书引擎等配套内容，方便用户一站式获取最新最全的开源阅读资源"/><title>写源小工具 - 明月书阁 - 明月照大江发布页</title><link rel="icon" href="/img/favicon.ico"/>
 <link rel="stylesheet" href="/css/style.css">
 
 <link rel="stylesheet" href="/css/helpers.css">
@@ -556,7 +556,7 @@
         }, 500);
       }
 
-      function fallbackCopyText(text) {
+      function tryLegacyCopy(text) {
         var ta = document.createElement("textarea");
         ta.value = text;
         ta.setAttribute("readonly", "readonly");
@@ -568,17 +568,14 @@
         if (ta.setSelectionRange) {
           ta.setSelectionRange(0, ta.value.length);
         }
+        var ok = false;
         try {
-          var ok = document.execCommand("copy");
-          if (ok) {
-            showToast();
-          } else {
-            setDiscoverStatus("复制失败，请手动复制。", true);
-          }
+          ok = document.execCommand("copy");
         } catch (e) {
-          setDiscoverStatus("复制失败，请手动复制。", true);
+          ok = false;
         }
         document.body.removeChild(ta);
+        return ok;
       }
 
       function copyById(id) {
@@ -589,17 +586,21 @@
           setDiscoverStatus("没有可复制的内容。", true);
           return;
         }
+        if (tryLegacyCopy(text)) {
+          showToast();
+          return;
+        }
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(text).then(
             function () {
               showToast();
             },
             function () {
-              fallbackCopyText(text);
+              setDiscoverStatus("复制失败，请手动复制。", true);
             }
           );
         } else {
-          fallbackCopyText(text);
+          setDiscoverStatus("复制失败，请手动复制。", true);
         }
       }
 
@@ -649,6 +650,22 @@
         return div.querySelectorAll("a");
       }
 
+      function cleanText(text) {
+        return String(text || "")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+
+      function getLinkTitle(link) {
+        if (!link) return "";
+        var titleNode = link.querySelector("h1, h2, h3, h4, h5, h6");
+        var raw = titleNode ? titleNode.textContent : link.textContent;
+        var cleaned = cleanText(raw);
+        if (cleaned) return cleaned;
+        var attrTitle = link.getAttribute("title");
+        return cleanText(attrTitle);
+      }
+
       function okpage() {
         pageclass = $("#pageclass").value.replace(/(\+|\?)/g, "\\$1");
         pageclass = pageclass
@@ -692,7 +709,7 @@
         }
         var html = "";
         for (let i = 0; i < list.length; i++) {
-          let text = list[i].innerText;
+          let text = getLinkTitle(list[i]);
           let href = list[i].getAttribute("href");
           html += text + "::" + href + "\n";
         }
@@ -714,7 +731,7 @@
         }
         var html = [];
         for (let i = 0; i < list.length; i++) {
-          let text = list[i].innerText;
+          let text = getLinkTitle(list[i]);
           let href = list[i].getAttribute("href");
           html.push({
             title: text,
@@ -1315,32 +1332,22 @@
 
         function copyText(text, statusId) {
           if (!text) return;
+          if (window.tryLegacyCopy && tryLegacyCopy(text)) {
+            setStatus(statusId, "已复制。", false);
+            return;
+          }
           if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(text).then(
               function () {
                 setStatus(statusId, "已复制。", false);
               },
               function () {
-                fallbackCopy(text, statusId);
+                setStatus(statusId, "复制失败。", true);
               }
             );
           } else {
-            fallbackCopy(text, statusId);
-          }
-        }
-
-        function fallbackCopy(text, statusId) {
-          var ta = document.createElement("textarea");
-          ta.value = text;
-          document.body.appendChild(ta);
-          ta.select();
-          try {
-            document.execCommand("copy");
-            setStatus(statusId, "已复制。", false);
-          } catch (e) {
             setStatus(statusId, "复制失败。", true);
           }
-          document.body.removeChild(ta);
         }
 
         document.getElementById("toCurlBtnMain").addEventListener("click", function () {
@@ -1524,32 +1531,22 @@
         function copyResult() {
           var text = output.value;
           if (!text) return;
+          if (window.tryLegacyCopy && tryLegacyCopy(text)) {
+            setStatus("已复制。", false);
+            return;
+          }
           if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(text).then(
               function () {
                 setStatus("已复制。", false);
               },
               function () {
-                fallbackCopy(text);
+                setStatus("复制失败。", true);
               }
             );
           } else {
-            fallbackCopy(text);
-          }
-        }
-
-        function fallbackCopy(text) {
-          var ta = document.createElement("textarea");
-          ta.value = text;
-          document.body.appendChild(ta);
-          ta.select();
-          try {
-            document.execCommand("copy");
-            setStatus("已复制。", false);
-          } catch (e) {
             setStatus("复制失败。", true);
           }
-          document.body.removeChild(ta);
         }
 
         function clearAll() {
