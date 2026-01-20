@@ -556,7 +556,22 @@
         }, 500);
       }
 
-      function tryLegacyCopy(text) {
+      function LocalCopy(text, sourceEl) {
+        var ok = false;
+        if (sourceEl && sourceEl.focus && sourceEl.select) {
+          try {
+            sourceEl.focus();
+            sourceEl.select();
+            if (sourceEl.setSelectionRange) {
+              sourceEl.setSelectionRange(0, text.length);
+            }
+            ok = document.execCommand("copy");
+          } catch (e) {
+            ok = false;
+          }
+          if (sourceEl.blur) sourceEl.blur();
+          if (ok) return true;
+        }
         var ta = document.createElement("textarea");
         ta.value = text;
         ta.setAttribute("readonly", "readonly");
@@ -564,12 +579,11 @@
         ta.style.top = "-9999px";
         ta.style.opacity = "0";
         document.body.appendChild(ta);
-        ta.select();
         ta.focus();
+        ta.select();
         if (ta.setSelectionRange) {
           ta.setSelectionRange(0, ta.value.length);
         }
-        var ok = false;
         try {
           ok = document.execCommand("copy");
         } catch (e) {
@@ -587,7 +601,7 @@
           setDiscoverStatus("没有可复制的内容。", true);
           return;
         }
-        if (tryLegacyCopy(text)) {
+        if (LocalCopy(text, el)) {
           showToast();
           return;
         }
@@ -1333,7 +1347,7 @@
 
         function copyText(text, statusId) {
           if (!text) return;
-          if (window.tryLegacyCopy && tryLegacyCopy(text)) {
+          if (window.LocalCopy && LocalCopy(text)) {
             setStatus(statusId, "已复制。", false);
             return;
           }
@@ -1532,7 +1546,7 @@
         function copyResult() {
           var text = output.value;
           if (!text) return;
-          if (window.tryLegacyCopy && tryLegacyCopy(text)) {
+          if (window.LocalCopy && LocalCopy(text)) {
             setStatus("已复制。", false);
             return;
           }
