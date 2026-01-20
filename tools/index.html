@@ -565,6 +565,7 @@
         ta.style.opacity = "0";
         document.body.appendChild(ta);
         ta.select();
+        ta.focus();
         if (ta.setSelectionRange) {
           ta.setSelectionRange(0, ta.value.length);
         }
