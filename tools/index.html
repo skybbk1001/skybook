@@ -1345,9 +1345,9 @@
           el.className = isError ? "status error" : "status";
         }
 
-        function copyText(text, statusId) {
+        function copyText(text, statusId, sourceEl) {
           if (!text) return;
-          if (window.LocalCopy && LocalCopy(text)) {
+          if (window.LocalCopy && LocalCopy(text, sourceEl)) {
             setStatus(statusId, "已复制。", false);
             return;
           }
@@ -1388,11 +1388,13 @@
         });
 
         document.getElementById("copyCurlBtnMain").addEventListener("click", function () {
-          copyText(document.getElementById("curlOutputMain").value, "statusAnalyzeToCurl");
+          var el = document.getElementById("curlOutputMain");
+          copyText(el.value, "statusAnalyzeToCurl", el);
         });
 
         document.getElementById("copyAnalyzeBtnMain").addEventListener("click", function () {
-          copyText(document.getElementById("analyzeOutputMain").value, "statusCurlToAnalyze");
+          var el = document.getElementById("analyzeOutputMain");
+          copyText(el.value, "statusCurlToAnalyze", el);
         });
 
         function clearAnalyzeMain() {
@@ -1546,7 +1548,7 @@
         function copyResult() {
           var text = output.value;
           if (!text) return;
-          if (window.LocalCopy && LocalCopy(text)) {
+          if (window.LocalCopy && LocalCopy(text, output)) {
             setStatus("已复制。", false);
             return;
           }
