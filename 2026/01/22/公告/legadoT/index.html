@@ -40,22 +40,24 @@
 <a class="menubar-link" href="/tags">Tags</a></li><li class="menubar-item" data-border="data-border"></li><li class="menubar-item"><a class="menubar-link" href="/activities/"><span>动态</span></a></li><li class="menubar-item"><a class="menubar-link" href="/rank/"><span>排行</span></a></li><li class="menubar-item"><a class="menubar-link" href="/download/"><span>下载</span></a></li><li class="menubar-item"><a class="menubar-link" href="/about/"><span>关于</span></a></li></ul><div class="menu-search-box search-button"><div>搜索</div>
 <i class="icon icon-search"></i></div></div></div><div class="main" data-page="post"><article class="post indent" id="post"><header class="post-head"><h1 class="post-title"><a class="title" href="/2026/01/22/%E5%85%AC%E5%91%8A/legadoT/">阅读T・后台任务</a></h1></header><div class="post-meta"><div class="post-date"><time class="post-time" itemprop="datePublished" title="2026-01-22 19:09:40" datetime="2026-01-22T11:09:40.000Z">2026-01-22</time></div>|
 <div class="post-tag"><ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/%E8%BD%AF%E4%BB%B6/" rel="tag">软件</a></li></ul></div>
-<div class="post-visit"><span id="page_pv">?</span>访问</div></div><!-- 👉 添加作者信息--><div class="post-info"><div class="post-word-count">本文共482字。阅读完需要约1分钟。</div>
+<div class="post-visit"><span id="page_pv">?</span>访问</div></div><!-- 👉 添加作者信息--><div class="post-info"><div class="post-word-count">本文共526字。阅读完需要约2分钟。</div>
 <div class="post-cc">版权声明：本站所有资源均来自网络，仅供书友免费检索。本站支持正版，建议用户检索后支持正版书籍及作者。
 
 |
-<a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/2.5/cn/">CC BY-NC-SA 2.5 CN</a></div></div><div class="article-entry" itemprop="articleBody"><h2 id="阅读T简介"><a href="#阅读T简介" class="headerlink" title="阅读T简介"></a>阅读T简介</h2><p>阅读T基于legado原版修改，增加了定时任务功能，使用cron表达式定时执行脚本。支持返回json协议让阅读完成指定动作，如：发送通知、刷新某本书的目录、缓存章节等。另外还有针对原版痛点的一些优化</p>
+<a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/2.5/cn/">CC BY-NC-SA 2.5 CN</a></div></div><div class="article-entry" itemprop="articleBody"><h2 id="阅读T简介"><a href="#阅读T简介" class="headerlink" title="阅读T简介"></a>阅读T简介</h2><p>阅读T基于legado原版修改，增加了定时任务功能，使用cron表达式定时执行脚本。支持返回json协议让阅读完成指定动作，如：发送通知、刷新目录、缓存章节等。另外还有针对原版的一些优化</p>
 <h2 id="主要特性："><a href="#主要特性：" class="headerlink" title="主要特性："></a>主要特性：</h2><ul>
 <li>支持完善的定时任务管理调度</li>
 <li>专为阅读优化的代码编辑器</li>
 <li>引入crypto-js,写加解密更方便</li>
-<li>升级JS引擎(Rhino)至最新1.9.0,支持更多es6语法</li>
+<li><u>升级JS引擎(Rhino)至最新1.9.0,支持更多es6语法<u>更换JS为htmluint-core-js 4.21，修复const作用域问题</li>
+<li>支持原生段评，示例书源：<a target="_blank" rel="noopener" href="https://skybook.mgz.la/file/json/12qL95sMcCriHsXGw64ata.json">https://skybook.mgz.la/file/json/12qL95sMcCriHsXGw64ata.json</a></li>
 </ul>
 <h2 id="下载链接"><a href="#下载链接" class="headerlink" title="下载链接"></a>下载链接</h2><ul>
 <li>​▾ <a href="/staic/legado_app_autoTask.apk"><strong>一键下载</strong></a></li>
 <li>▾ <a target="_blank" rel="noopener" href="https://github.com/skybbk1001/legado/releases/tag/beta"><strong>仓库下载</strong></a></li>
 </ul>
 <h2 id="更新日志"><a href="#更新日志" class="headerlink" title="更新日志"></a>更新日志</h2><ul>
+<li>2026-02-12 支持原生段评，更换js引擎为htmluint-core-js</li>
 <li>2026-02-04<br>1.为java.get&#x2F;post&#x2F;head增加json字符串格式请求头的重载方法<br>2.尝试升级js引擎Rhino到1.9.0，支持更多es6语法<br>3.增加定时任务的一键导入功能，支持&#x2F;auto?src&#x3D; &#x2F;autoTask?src&#x3D;<br>4.web编辑器体验优化</li>
 <li>2026-02-03<br>1.编辑器修复各种BUG<br>2.编辑器新增CURL转换<br>3.引入crypto-js,让阅读原生支持CryptoJS</li>
 <li>2026-01-30 web编辑器支持代码块折叠、阅读语法自动补全</li>
