@@ -920,6 +920,7 @@ figure.highlight table {
 figure.highlight table .code pre {
   margin: 0;
   max-width: calc(100% - 64px);
+  white-space: pre-wrap;
 }
 figure.highlight table .gutter {
   width: 10px;
