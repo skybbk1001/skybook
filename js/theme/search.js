@@ -102,17 +102,7 @@
     async function fetchMeta() {
       if (!meta.length) {
         const config = window.config;
-        const response = await fetch(config.url_root + config.meta_path);
-        if (response.status === 404)
-          throw Error('Search meta file not found. Please install hexo-search-generator first.');
-        else if (response.status !== 200)
-          throw Error(`Failed fetching search meta, got status ${response.status}`);
-
-        const contentType = response.headers.get('content-type');
-        if (contentType.includes('application/json'))
-          meta = await response.json();
-        else
-          throw TypeError(`Unsupported content type: ${contentType}, use json instead.`);
+        meta = await request(config.url_root + config.meta_path);
       }
       return meta;
     };

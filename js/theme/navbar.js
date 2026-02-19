@@ -5,14 +5,7 @@
   const menubar = document.getElementById('menubar');
 
   function getScrollTop() {
-    var scroll_top = 0;
-    if (document.documentElement && document.documentElement.scrollTop) {
-      scroll_top = document.documentElement.scrollTop;
-    }
-    else if (document.body) {
-      scroll_top = document.body.scrollTop;
-    }
-    return scroll_top;
+    return window.scrollY || document.documentElement.scrollTop;
   }
 
   Theme.navbar = {

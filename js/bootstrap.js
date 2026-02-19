@@ -1,19 +1,12 @@
 (function () {
   "use strict";
 
+  // HTMLCollection polyfill (NodeList.forEach 已在现代浏览器原生支持)
   HTMLCollection.prototype.forEach = function (callback) {
     return [].forEach.call(this, callback);
   }
 
   HTMLCollection.prototype.map = function (callback) {
-    return [].map.call(this, callback);
-  }
-
-  NodeList.prototype.forEach = function (callback) {
-    return [].forEach.call(this, callback);
-  }
-
-  NodeList.prototype.map = function (callback) {
     return [].map.call(this, callback);
   }
 

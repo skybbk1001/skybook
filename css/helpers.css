@@ -1,6 +1,5 @@
-.indent p {
-  text-indent: 2em;
-}
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400&family=Noto+Serif:wght@400&family=Noto+Serif+SC:wght@400&family=Raleway:wght@400&family=Inconsolata:wght@400&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400&family=Noto+Serif:wght@400&family=Noto+Serif+SC:wght@400&family=Raleway:wght@400&family=Inconsolata:wght@400&display=swap");
 .text-indent-none {
   text-indent: 0 !important;
 }
@@ -589,17 +588,40 @@
 }
 .post p .warning-banner {
   display: block;
-  color: #ff542d;
   font-size: 24px;
   text-indent: 0;
   text-align: center;
   margin: 2em 0 1.5em 0;
 }
-.post p .warning-banner a {
-  color: #cdcdcd;
+@media (prefers-color-scheme: light) {
+  .post p .warning-banner {
+    color: #ff542d;
+  }
 }
-.post p .warning-banner a:hover {
-  color: #ff542d;
+@media (prefers-color-scheme: dark) {
+  .post p .warning-banner {
+    color: #ffcf76;
+  }
+}
+@media (prefers-color-scheme: light) {
+  .post p .warning-banner a {
+    color: #333;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  .post p .warning-banner a {
+    color: #cdcdcd;
+  }
+}
+@media (prefers-color-scheme: light) {
+  .post p .warning-banner a:hover {
+    color: #ff542d;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  .post p .warning-banner a:hover {
+    color: #ffcf76;
+  }
 }
 .post .text-left {
   text-align: left;

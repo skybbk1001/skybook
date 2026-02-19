@@ -15,17 +15,16 @@ body {
   list-style: none;
   text-decoration: none;
 }
-.article-pauthor {
-  font-size: 0.9em;
-  color: #888;
-  margin-bottom: 1em;
-}
 img {
   max-width: 100%;
   height: auto;
   display: inline-block;
   vertical-align: middle;
-  filter: brightness(0.8);
+}
+@media (prefers-color-scheme: dark) {
+  img {
+    filter: brightness(0.8);
+  }
 }
 del,
 s {
@@ -169,7 +168,7 @@ s {
 }
 @media (max-width: 768px) {
   .main {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(75%, 800px);
   }
 }
 .main[data-page="category"],
@@ -197,6 +196,13 @@ s {
 }
 .article-entry ul li {
   list-style: disc;
+}
+.article-entry ul li:has(> label > input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -2em;
+}
+.article-entry ul li:has(> label > input[type="checkbox"]) label > input[type="checkbox"] {
+  margin-right: 0.5em;
 }
 .article-entry ul li p {
   text-indent: 0;
