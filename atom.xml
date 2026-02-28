@@ -316,17 +316,17 @@
     <category term="定时任务" scheme="https://skybook.legado1.top/categories/%E5%AE%9A%E6%97%B6%E4%BB%BB%E5%8A%A1/"/>
     <category term="签到" scheme="https://skybook.legado1.top/tags/%E7%AD%BE%E5%88%B0/"/>
     <content>
-      <![CDATA[<p>贴吧全自动签到，只适用于阅读T</p><h2 id="📥-导入链接"><a href="#📥-导入链接" class="headerlink" title="📥 导入链接"></a>📥 导入链接</h2><p>▾ <a href="legado://import/auto?src=https://skybook.mgz.la/file/json/1iDpZvHxsXMaRSfaEnPXAM.json"><strong>一键导入</strong></a></p><blockquote><p>推荐使用最新客户端导入 </p></blockquote>]]>
+      <![CDATA[<p>百度贴吧自动签到，只适用于<a href="/posts/208df52f">阅读T</a></p><h2 id="📥-导入链接"><a href="#📥-导入链接" class="headerlink" title="📥 导入链接"></a>📥 导入链接</h2><p>▾ <a href="legado://import/auto?src=https://skybook.mgz.la/file/json/7elt6CTakLYfuCAsSwRMpT.json"><strong>一键导入</strong></a></p><blockquote><p>推荐使用最新客户端导入 </p></blockquote><h2 id="更新日志"><a href="#更新日志" class="headerlink" title="更新日志"></a>更新日志</h2><ul><li>2026-02-28</li><li>使用内置浏览器登录，无需抓包</li><li>签到返回日志</li></ul>]]>
     </content>
     <id>https://skybook.legado1.top/posts/ca91eeeb.html</id>
     <link href="https://skybook.legado1.top/posts/ca91eeeb.html"/>
     <published>2026-02-20T05:09:07.000Z</published>
     <summary>
-      <![CDATA[<p>贴吧全自动签到，只适用于阅读T</p>
-<h2 id="📥-导入链接"><a href="#📥-导入链接" class="headerlink" title="📥 导入链接"></a>📥 导入链接</h2><p>▾ <a href="legado://import/]]>
+      <![CDATA[<p>百度贴吧自动签到，只适用于<a href="/posts/208df52f">阅读T</a></p>
+<h2 id="📥-导入链接"><a href="#📥-导入链接" class="headerlink" title="📥 导入链接"></a>📥 导入链接</h2]]>
     </summary>
     <title>「定时任务」贴吧签到</title>
-    <updated>2026-02-20T09:00:28.000Z</updated>
+    <updated>2026-02-28T08:25:45.000Z</updated>
   </entry>
   <entry>
     <author>
